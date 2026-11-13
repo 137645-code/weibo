@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>信息流</title>
+<style>
+  /* ---------- 设计令牌 ---------- */
+  :root {
+    --color-bg: #F5F6F8;
+    --color-surface: #FFFFFF;
+    --color-primary: #2563EB;
+    --color-primary-dark: #1D4ED8;
+    --color-primary-soft: #DBEAFE;
+    --color-text: #111827;
+    --color-text-sub: #4B5563;
+    --color-text-hint: #9CA3AF;
+    --color-border: #E5E7EB;
+    --color-warn-bg: #FEF3C7;
+    --color-warn-text: #92400E;
+    --radius-card: 14px;
+    --radius-input: 10px;
+    --shadow-card: 0 1px 2px rgba(17, 24, 39, .04), 0 8px 24px rgba(17, 24, 39, .04);
+    --shadow-card-hover: 0 2px 4px rgba(17, 24, 39, .06), 0 12px 28px rgba(17, 24, 39, .07);
+    --space-page: 32px;
+  }
+
+  /* ---------- 基础重置 ---------- */
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    padding: var(--space-page) 0 64px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 单栏居中容器 */
+  .layout {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0 var(--space-page);
+  }
+
+  /* ---------- 顶部标题 ---------- */
+  .page-header { margin-bottom: 24px; }
+
+  .page-title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: .5px;
+  }
+
+  .page-subtitle {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--color-text-hint);
+  }
+
+  /* ---------- 发布区卡片 ---------- */
+  .composer {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 16px 16px 12px;
+    margin-bottom: 20px;
+    transition: box-shadow .18s ease;
+  }
+
+  .composer:focus-within { box-shadow: var(--shadow-card-hover); }
+
+  .composer-input {
+    display: block;
+    width: 100%;
+    min-height: 84px;
+    max-height: 260px;
+    padding: 4px 2px;
+    border: 0;
+    outline: 0;
+    resize: vertical;
+    background: transparent;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .composer-input::placeholder { color: var(--color-text-hint); }
+
+  .composer-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .hint-text {
+    font-size: 12px;
+    color: var(--color-text-hint);
+  }
+
+  .hint-text[data-state="warn"] { color: #B45309; }
+
+  .btn-submit {
+    flex: none;
+    min-height: 40px;
+    padding: 0 22px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: #FFFFFF;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: .5px;
+    cursor: pointer;
+    transition: background-color .18s ease, transform .12s ease, box-shadow .18s ease;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, .24);
+  }
+
+  .btn-submit:hover { background: var(--color-primary-dark); }
+
+  .btn-submit:active { transform: translateY(1px); }
+
+  .btn-submit:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* ---------- 存储不可用提示条 ---------- */
+  .notice {
+    display: none;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    border-radius: var(--radius-input);
+    background: var(--color-warn-bg);
+    color: var(--color-warn-text);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .notice.is-visible { display: block; }
+
+  /* ---------- 信息流列表 ---------- */
+  .feed {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .feed-item {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    transition: box-shadow .18s ease, transform .18s ease;
+    animation: rise .22s ease both;
+  }
+
+  .feed-item:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
+
+  .feed-time {
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: var(--color-text-hint);
+    letter-spacing: .3px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .feed-content {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--color-text);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  /* ---------- 空状态 ---------- */
+  .empty {
+    padding: 56px 20px;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-card);
+    background: rgba(255, 255, 255, .6);
+    color: var(--color-text-hint);
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .empty[hidden] { display: none; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---------- 响应式：窄屏 ---------- */
+  @media (max-width: 640px) {
+    :root { --space-page: 16px; }
+    body { padding-top: 20px; padding-bottom: 40px; font-size: 14px; }
+    .page-title { font-size: 20px; }
+    .feed-item { padding: 14px 15px; }
+  }
+
+  /* 尊重系统减少动效偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: .001ms !important;
+      transition-duration: .001ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <header class="page-header">
+    <h1 class="page-title">信息流</h1>
+    <p class="page-subtitle">内容仅保存在本机浏览器</p>
+  </header>
+
+  <!-- 存储不可用时的降级提示 -->
+  <p class="notice" id="notice" role="status">
+    当前浏览器无法保存数据，内容仅在本次会话有效。
+  </p>
+
+  <!-- 发布区 -->
+  <form class="composer" id="composer" autocomplete="off">
+    <label class="page-subtitle" for="postInput" hidden>发布新动态</label>
+    <textarea
+      class="composer-input"
+      id="postInput"
+      maxlength="500"
+      placeholder="写点什么…"
+      rows="3"></textarea>
+    <div class="composer-actions">
+      <span class="hint-text" id="hintText">最多 500 字</span>
+      <button class="btn-submit" type="submit">发布</button>
+    </div>
+  </form>
+
+  <!-- 信息流列表 -->
+  <main>
+    <ul class="feed" id="feed"></ul>
+    <p class="empty" id="emptyState">还没有内容，试着发布第一条吧</p>
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ========== 数据层 ========== */
+
+  // 存储键名，带版本号便于日后结构演进
+  var STORAGE_KEY = 'feed_posts_v1';
+
+  // 单条动态结构：{ id: string, content: string, createdAt: number }
+  // createdAt 为毫秒时间戳，既用于排序也用于格式化展示
+  var posts = [];
+
+  /**
+   * 从 LocalStorage 读取动态列表。
+   * 任何异常（存储被禁用、JSON 损坏、配额异常）都降级为空数组，不向外抛出。
+   * @returns {{ list: Array, ok: boolean }} ok 表示存储是否可用
+   */
+  function loadPosts() {
+    try {
+      var raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { list: [], ok: true };
+
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return { list: [], ok: true };
+
+      // 过滤脏数据，避免历史损坏内容影响渲染
+      var clean = [];
+      for (var i = 0; i < parsed.length; i++) {
+        var item = parsed[i];
+        if (!item || typeof item !== 'object') continue;
+        if (typeof item.content !== 'string' || item.content.trim() === '') continue;
+        if (typeof item.createdAt !== 'number' || !isFinite(item.createdAt)) continue;
+        clean.push({
+          id: String(item.id || item.createdAt + '_' + i),
+          content: item.content,
+          createdAt: item.createdAt
+        });
+      }
+      return { list: clean, ok: true };
+    } catch (err) {
+      // 读取失败（如隐私模式禁用存储）时以空列表继续
+      return { list: [], ok: false };
+    }
+  }
+
+  /**
+   * 写入动态列表到 LocalStorage。
+   * @returns {boolean} 是否写入成功
+   */
+  function savePosts(list) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      return true;
+    } catch (err) {
+      // 写入失败（配额超限 / 存储被禁用）时返回 false，由调用方给出提示
+      return false;
+    }
+  }
+
+  /* ========== 渲染层 ========== */
+
+  /**
+   * 时间戳格式化为 YYYY-MM-DD HH:mm（手动补零，不依赖第三方库）
+   */
+  function formatTime(ts) {
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  /**
+   * 创建单条动态的 DOM 节点。
+   * 使用 textContent 写入用户文本，避免 HTML 注入。
+   */
+  function createPostNode(post) {
+    var li = document.createElement('li');
+    li.className = 'feed-item';
+
+    var time = document.createElement('p');
+    time.className = 'feed-time';
+    time.textContent = formatTime(post.createdAt);
+
+    var body = document.createElement('p');
+    body.className = 'feed-content';
+    body.textContent = post.content;
+
+    li.appendChild(time);
+    li.appendChild(body);
+    return li;
+  }
+
+  /**
+   * 全量重绘信息流：按发布时间倒序，使用 DocumentFragment 批量插入。
+   */
+  function renderPosts() {
+    var feedEl = document.getElementById('feed');
+    var emptyEl = document.getElementById('emptyState');
+    if (!feedEl || !emptyEl) return;
+
+    // 倒序：最新的在最前
+    var sorted = posts.slice().sort(function (a, b) {
+      return b.createdAt - a.createdAt;
+    });
+
+    var fragment = document.createDocumentFragment();
+    for (var i = 0; i < sorted.length; i++) {
+      fragment.appendChild(createPostNode(sorted[i]));
+    }
+
+    feedEl.textContent = '';
+    feedEl.appendChild(fragment);
+
+    emptyEl.hidden = sorted.length > 0;
+  }
+
+  /* ========== 交互层 ========== */
+
+  var hintEl = document.getElementById('hintText');
+  var hintTimer = null;
+  var DEFAULT_HINT = '最多 500 字';
+
+  /**
+   * 输入区下方的轻提示，2 秒后恢复默认文案。
+   */
+  function showHint(text, isWarn) {
+    if (!hintEl) return;
+    hintEl.textContent = text;
+    hintEl.setAttribute('data-state', isWarn ? 'warn' : 'normal');
+    if (hintTimer) window.clearTimeout(hintTimer);
+    hintTimer = window.setTimeout(function () {
+      hintEl.textContent = DEFAULT_HINT;
+      hintEl.setAttribute('data-state', 'normal');
+    }, 2000);
+  }
+
+  /**
+   * 发布一条动态：校验 → 构造对象 → 持久化 → 重绘 → 清空输入框
+   */
+  function addPost(content) {
+    var text = content.trim();
+    if (!text) {
+      showHint('内容不能为空', true);
+      return;
+    }
+
+    var post = {
+      id: Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+      content: text,
+      createdAt: Date.now()
+    };
+
+    posts.push(post);
+
+    // 写入失败时保留内存态，用户本次会话内仍可正常查看
+    var saved = savePosts(posts);
+    if (!saved) {
+      var noticeEl = document.getElementById('notice');
+      if (noticeEl) noticeEl.classList.add('is-visible');
+    }
+
+    renderPosts();
+  }
+
+  /* ========== 初始化 ========== */
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('composer');
+    var input = document.getElementById('postInput');
+    var noticeEl = document.getElementById('notice');
+
+    var loaded = loadPosts();
+    posts = loaded.list;
+    if (!loaded.ok && noticeEl) noticeEl.classList.add('is-visible');
+
+    renderPosts();
+
+    if (!form || !input) return;
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      addPost(input.value);
+      input.value = '';
+      input.style.height = '';
+      input.focus();
+    });
+  });
+})();
+</script>
+</body>
+</html>
