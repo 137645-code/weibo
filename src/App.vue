@@ -3,15 +3,12 @@ import { onMounted } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import PostComposer from './components/PostComposer.vue'
 import PostFeed from './components/PostFeed.vue'
-import StorageNotice from './components/StorageNotice.vue'
+import ServerNotice from './components/ServerNotice.vue'
 import { useGeolocation } from './composables/useGeolocation'
 import { useFeedStore } from './stores/feed'
 
 const feed = useFeedStore()
 const { locate } = useGeolocation()
-
-// 首屏同步读取本地数据，避免空白态闪烁
-feed.init()
 
 /** 定位异步进行，不阻塞首屏；失败只降级，不影响发布与浏览 */
 async function requestLocation(): Promise<void> {
@@ -23,7 +20,9 @@ async function requestLocation(): Promise<void> {
   feed.setLocationStatus(result.status)
 }
 
+// 首屏从服务端拉取数据，加载期间信息流不展示空状态，避免闪烁
 onMounted(() => {
+  void feed.init()
   void requestLocation()
 })
 </script>
@@ -36,7 +35,7 @@ onMounted(() => {
 
   <div class="layout">
     <AppHeader />
-    <StorageNotice />
+    <ServerNotice />
     <PostComposer />
     <PostFeed />
   </div>

@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { STORAGE_KEY } from '@/constants/feed'
 import type { Post } from '@/types/post'
+import { seedPosts, storedPosts, testFetch } from '@/test/fakeServer'
 import { useFeedStore } from '../feed'
 
 const BASE_TIME = 1763000000000
@@ -18,9 +18,8 @@ function makePost(overrides: Partial<Post> = {}): Post {
   }
 }
 
-function readStored(): Post[] {
-  const raw = window.localStorage.getItem(STORAGE_KEY)
-  return raw ? (JSON.parse(raw) as Post[]) : []
+function stubFetchFailure(): void {
+  vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')))
 }
 
 describe('useFeedStore - 初始化', () => {
@@ -28,60 +27,106 @@ describe('useFeedStore - 初始化', () => {
     setActivePinia(createPinia())
   })
 
-  it('初始状态为空且可用', () => {
+  it('初始状态：空信息流、服务可用、未完成首屏加载', () => {
     const store = useFeedStore()
 
     expect(store.posts).toEqual([])
-    expect(store.storageOk).toBe(true)
+    expect(store.apiOk).toBe(true)
+    expect(store.initialized).toBe(false)
+    expect(store.isEmpty).toBe(true)
     expect(store.location).toBeNull()
     expect(store.locationStatus).toBe('idle')
   })
 
-  it('init 读取已存数据', () => {
+  it('init 从服务端读取动态', async () => {
     const stored = makePost()
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([stored]))
+    seedPosts([stored])
 
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
     expect(store.posts).toEqual([stored])
-    expect(store.storageOk).toBe(true)
+    expect(store.apiOk).toBe(true)
+    expect(store.initialized).toBe(true)
   })
 
-  it('空存储时 init 得到空列表', () => {
+  it('服务端无数据时 init 得到空列表', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
     expect(store.posts).toEqual([])
-    expect(store.storageOk).toBe(true)
+    expect(store.apiOk).toBe(true)
+    expect(store.initialized).toBe(true)
   })
 
-  it('数据损坏时 init 标记存储不可用', () => {
-    window.localStorage.setItem(STORAGE_KEY, '{broken')
+  it('服务端不可用时 init 标记降级且不影响后续操作', async () => {
+    stubFetchFailure()
 
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
     expect(store.posts).toEqual([])
-    expect(store.storageOk).toBe(false)
+    expect(store.apiOk).toBe(false)
+    expect(store.initialized).toBe(true)
   })
 
-  it('占用内存的数据在刷新后仍可恢复：新 store 再次 init 可读到同一份数据', () => {
-    const stored = makePost()
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([stored]))
+  it('重新 init 可拿到服务端的最新数据', async () => {
+    seedPosts([makePost()])
 
     setActivePinia(createPinia())
     const first = useFeedStore()
-    first.init()
-    const reloaded = first.addPost({ content: '第二条' })
-    expect(reloaded.ok).toBe(true)
+    await first.init()
+    await first.addPost({ content: '第二条' })
 
     setActivePinia(createPinia())
     const second = useFeedStore()
-    second.init()
+    await second.init()
 
     expect(second.posts).toHaveLength(2)
     expect(second.posts.map((post) => post.content)).toContain('第二条')
+  })
+
+  it('首屏加载与发布交错时，不会用旧快照覆盖刚发布的动态', async () => {
+    seedPosts([makePost({ id: 'server', createdAt: 1, content: '服务端旧数据' })])
+
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    // GET 立刻拿到快照，但延迟交付，模拟慢接口先发后至
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await testFetch(input, init)
+      if (!init?.method || init.method === 'GET') await gate
+      return response
+    })
+
+    const store = useFeedStore()
+    const loading = store.init()
+    const created = store.addPost({ content: '加载期间发布' })
+    release?.()
+
+    await created
+    await loading
+
+    const contents = store.posts.map((post) => post.content)
+    expect(contents).toContain('加载期间发布')
+    expect(contents).toContain('服务端旧数据')
+  })
+
+  it('服务恢复后 apiOk 复位', async () => {
+    const store = useFeedStore()
+    await store.init()
+
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')))
+    const failed = await store.addPost({ content: '失败一次' })
+    expect(failed).toEqual({ ok: false, reason: 'unavailable' })
+    expect(store.apiOk).toBe(false)
+
+    vi.stubGlobal('fetch', testFetch)
+    const recovered = await store.addPost({ content: '恢复了' })
+    expect(recovered.ok).toBe(true)
+    expect(store.apiOk).toBe(true)
   })
 })
 
@@ -91,40 +136,34 @@ describe('useFeedStore - 派生数据', () => {
   })
 
   it('按发布时间倒序排列', () => {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify([
-        makePost({ id: 'old', createdAt: 1, content: '最早' }),
-        makePost({ id: 'new', createdAt: 3, content: '最新' }),
-        makePost({ id: 'mid', createdAt: 2, content: '居中' }),
-      ]),
-    )
-
     const store = useFeedStore()
-    store.init()
+    store.posts = [
+      makePost({ id: 'old', createdAt: 1, content: '最早' }),
+      makePost({ id: 'new', createdAt: 3, content: '最新' }),
+      makePost({ id: 'mid', createdAt: 2, content: '居中' }),
+    ]
 
     expect(store.sortedPosts.map((post) => post.id)).toEqual(['new', 'mid', 'old'])
   })
 
   it('排序不修改原始顺序', () => {
-    const oldest = makePost({ id: 'old', createdAt: 1 })
-    const newest = makePost({ id: 'new', createdAt: 2 })
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([oldest, newest]))
-
     const store = useFeedStore()
-    store.init()
+    store.posts = [
+      makePost({ id: 'old', createdAt: 1 }),
+      makePost({ id: 'new', createdAt: 2 }),
+    ]
 
     expect(store.posts.map((post) => post.id)).toEqual(['old', 'new'])
     expect(store.sortedPosts.map((post) => post.id)).toEqual(['new', 'old'])
   })
 
-  it('isEmpty 随数据变化', () => {
+  it('isEmpty 随数据变化', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
     expect(store.isEmpty).toBe(true)
 
-    store.addPost({ content: '第一条' })
+    await store.addPost({ content: '第一条' })
     expect(store.isEmpty).toBe(false)
   })
 })
@@ -134,11 +173,11 @@ describe('useFeedStore - 发布', () => {
     setActivePinia(createPinia())
   })
 
-  it('发布成功后写入存储并返回动态', () => {
+  it('发布成功后写入服务端并返回动态', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
-    const result = store.addPost({ content: '  新动态  ', author: ' 林一 ', avatar: 3 })
+    const result = await store.addPost({ content: '  新动态  ', author: ' 林一 ', avatar: 3 })
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -146,26 +185,36 @@ describe('useFeedStore - 发布', () => {
     expect(result.post.author).toBe('林一')
     expect(result.post.avatar).toBe(3)
     expect(store.posts).toHaveLength(1)
-    expect(readStored()).toHaveLength(1)
-    expect(readStored()[0]).toMatchObject({ content: '新动态', author: '林一', avatar: 3 })
+    expect(storedPosts()).toHaveLength(1)
+    expect(storedPosts()[0]).toMatchObject({ content: '新动态', author: '林一', avatar: 3 })
   })
 
-  it('正文为空时拒绝发布且不写入存储', () => {
+  it('正文为空时拒绝发布且不写入服务端', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
-    const result = store.addPost({ content: '   ' })
+    const result = await store.addPost({ content: '   ' })
 
     expect(result).toEqual({ ok: false, reason: 'empty' })
     expect(store.posts).toHaveLength(0)
-    expect(readStored()).toHaveLength(0)
+    expect(storedPosts()).toHaveLength(0)
   })
 
-  it('缺省昵称与越界头像使用默认值', () => {
+  it('正文超长时拒绝发布并返回 too-long', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
-    const result = store.addPost({ content: '匿名动态', avatar: 99 })
+    const result = await store.addPost({ content: 'a'.repeat(501) })
+
+    expect(result).toEqual({ ok: false, reason: 'too-long' })
+    expect(store.posts).toHaveLength(0)
+  })
+
+  it('缺省昵称与越界头像使用默认值', async () => {
+    const store = useFeedStore()
+    await store.init()
+
+    const result = await store.addPost({ content: '匿名动态', avatar: 99 })
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -173,50 +222,55 @@ describe('useFeedStore - 发布', () => {
     expect(result.post.avatar).toBe(0)
   })
 
-  it('未定位时地点为 null', () => {
+  it('未定位时地点为 null', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
-    const result = store.addPost({ content: '无地点' })
+    const result = await store.addPost({ content: '无地点' })
 
     expect(result.ok && result.post.location).toBeNull()
   })
 
-  it('已定位时新动态带上地点', () => {
+  it('已定位时新动态带上地点', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
     store.setLocation('上海')
 
-    const result = store.addPost({ content: '带地点' })
+    const result = await store.addPost({ content: '带地点' })
 
     expect(result.ok && result.post.location).toBe('上海')
-    expect(readStored()[0].location).toBe('上海')
+    expect(storedPosts()[0].location).toBe('上海')
   })
 
-  it('写入失败时保留内存数据并标记存储不可用', () => {
+  it('服务端不可用时返回 unavailable 并标记降级，不污染本地列表', async () => {
     const store = useFeedStore()
-    store.init()
-    const setItem = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        throw new Error('quota exceeded')
-      })
+    await store.init()
+    stubFetchFailure()
 
-    const result = store.addPost({ content: '写不进去' })
+    const result = await store.addPost({ content: '发不出去' })
 
-    expect(result.ok).toBe(true)
-    expect(store.storageOk).toBe(false)
-    expect(store.posts).toHaveLength(1)
-
-    setItem.mockRestore()
+    expect(result).toEqual({ ok: false, reason: 'unavailable' })
+    expect(store.apiOk).toBe(false)
+    expect(store.posts).toHaveLength(0)
   })
 
-  it('新发布的动态排在信息流最前', () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([makePost({ createdAt: 1 })]))
+  it('提交过程中 submitting 为 true，结束后复位', async () => {
     const store = useFeedStore()
-    store.init()
+    await store.init()
 
-    store.addPost({ content: '更新的动态' })
+    const pending = store.addPost({ content: '进行中' })
+    expect(store.submitting).toBe(true)
+
+    await pending
+    expect(store.submitting).toBe(false)
+  })
+
+  it('新发布的动态排在信息流最前', async () => {
+    seedPosts([makePost({ createdAt: 1 })])
+    const store = useFeedStore()
+    await store.init()
+
+    await store.addPost({ content: '更新的动态' })
 
     expect(store.sortedPosts[0].content).toBe('更新的动态')
   })

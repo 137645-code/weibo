@@ -18,11 +18,12 @@ function makePost(overrides: Partial<Post>): Post {
   }
 }
 
-function mountFeed(posts: Post[] = []) {
+function mountFeed(posts: Post[] = [], initialized = true) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = useFeedStore(pinia)
   store.posts = posts
+  store.initialized = initialized
 
   const wrapper = mount(PostFeed, { global: { plugins: [pinia] } })
   return { wrapper, store }
@@ -34,6 +35,12 @@ describe('PostFeed', () => {
 
     expect(wrapper.find('.empty').text()).toBe(EMPTY_FEED_TEXT)
     expect(wrapper.findAll('.feed-item')).toHaveLength(0)
+  })
+
+  it('首屏加载中不展示空状态，避免闪一下「还没有内容」', () => {
+    const { wrapper } = mountFeed([], false)
+
+    expect(wrapper.find('.empty').exists()).toBe(false)
   })
 
   it('有内容时隐藏空状态', () => {

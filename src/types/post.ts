@@ -1,6 +1,6 @@
 /**
- * 单条动态。字段与旧版 LocalStorage 数据结构保持完全一致，
- * 保证旧数据可直接读取，无需迁移。
+ * 单条动态。字段在前后端之间共用，服务端负责构造与归一化，
+ * 前端只做展示与宽松校验。
  */
 export interface Post {
   id: string
@@ -19,22 +19,23 @@ export interface PostDraft {
   location?: string | null
 }
 
-/** 读取结果；ok 表示存储本身是否可用，而非是否存在数据 */
+/** 读取结果；ok 表示服务端是否可用，而非是否存在数据 */
 export interface LoadResult {
   list: Post[]
   ok: boolean
 }
 
-/** 持久化契约：失败不抛错，用返回值表达 */
-export interface PostStorage {
-  load(): LoadResult
-  save(list: Post[]): boolean
-}
+/** 发布失败原因：状态层只表达原因，不携带任何 UI 文案 */
+export type AddPostFailureReason = 'empty' | 'too-long' | 'unavailable'
 
-/** 发布结果：状态层只表达成败与原因，不携带任何 UI 文案 */
-export type AddPostResult =
-  | { ok: true; post: Post }
-  | { ok: false; reason: 'empty' }
+/** 发布结果 */
+export type AddPostResult = { ok: true; post: Post } | { ok: false; reason: AddPostFailureReason }
+
+/** 远端数据源契约：失败不抛错，用返回值表达 */
+export interface PostApi {
+  load(): Promise<LoadResult>
+  create(draft: PostDraft): Promise<AddPostResult>
+}
 
 /** 定位状态：idle 未开始、locating 请求中、ready 命中城市、unavailable 不可用 */
 export type LocationStatus = 'idle' | 'locating' | 'ready' | 'unavailable'

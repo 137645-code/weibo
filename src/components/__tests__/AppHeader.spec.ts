@@ -8,7 +8,7 @@ describe('AppHeader', () => {
 
     expect(wrapper.find('.page-title').text()).toBe('Spark')
     expect(wrapper.find('.page-name-cn').text()).toBe('星火')
-    expect(wrapper.find('.page-subtitle').text()).toBe('把此刻的想法留在这里，内容仅保存在本机浏览器')
+    expect(wrapper.find('.page-subtitle').text()).toBe('把此刻的想法留在这里，内容由服务端的内存保存')
   })
 
   it('包含内联 SVG 星形图标且不引用外部资源', () => {

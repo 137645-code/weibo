@@ -9,8 +9,10 @@ import {
   HINT_RESET_DELAY,
   MAX_AUTHOR_LENGTH,
   MAX_CONTENT_LENGTH,
+  PUBLISH_FAILED_HINT,
 } from '@/constants/feed'
 import { useFeedStore } from '@/stores/feed'
+import { flushMicrotasks } from '@/test/flush'
 import PostComposer from '../PostComposer.vue'
 
 function setup() {
@@ -61,7 +63,7 @@ describe('PostComposer - 表单结构', () => {
 })
 
 describe('PostComposer - 发布', () => {
-  it('发布后新增动态，并清空正文、保留昵称与头像', async () => {
+  it('发布成功后新增动态，并清空正文、保留昵称与头像', async () => {
     const { store, mountComposer } = setup()
     const wrapper = mountComposer()
 
@@ -69,6 +71,7 @@ describe('PostComposer - 发布', () => {
     await wrapper.findAll('input[type="radio"]')[2].setValue(true)
     await wrapper.find('textarea').setValue('  今天的第一条动态  ')
     await wrapper.find('form').trigger('submit')
+    await flushMicrotasks()
 
     expect(store.posts).toHaveLength(1)
     expect(store.posts[0]).toMatchObject({
@@ -89,16 +92,33 @@ describe('PostComposer - 发布', () => {
 
     await wrapper.find('textarea').setValue('你好')
     await wrapper.find('form').trigger('submit')
+    await flushMicrotasks()
 
     expect(document.activeElement).toBe(wrapper.find('textarea').element)
   })
 
+  it('提交过程中禁用发布按钮，避免重复提交', async () => {
+    const { mountComposer } = setup()
+    const wrapper = mountComposer()
+    const button = wrapper.find('.btn-submit')
+
+    await wrapper.find('textarea').setValue('你好')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await wrapper.find('form').trigger('submit')
+    expect(button.attributes('disabled')).toBeDefined()
+
+    await flushMicrotasks()
+    expect(button.attributes('disabled')).toBeUndefined()
+  })
+
   it('内容为空时提示并拒绝发布，2 秒后提示恢复默认', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const { store, mountComposer } = setup()
     const wrapper = mountComposer()
 
     await wrapper.find('form').trigger('submit')
+    await flushMicrotasks()
 
     const hint = wrapper.find('.hint-text')
     expect(hint.text()).toBe(EMPTY_CONTENT_HINT)
@@ -110,6 +130,22 @@ describe('PostComposer - 发布', () => {
 
     expect(wrapper.find('.hint-text').text()).toBe(DEFAULT_HINT)
     expect(wrapper.find('.hint-text').attributes('data-state')).toBe('normal')
+  })
+
+  it('服务端不可用时提示失败并保留正文', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')))
+
+    const { store, mountComposer } = setup()
+    const wrapper = mountComposer()
+
+    await wrapper.find('textarea').setValue('发不出去的想法')
+    await wrapper.find('form').trigger('submit')
+    await flushMicrotasks()
+
+    expect(wrapper.find('.hint-text').text()).toBe(PUBLISH_FAILED_HINT)
+    expect(wrapper.find('.hint-text').attributes('data-state')).toBe('warn')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('发不出去的想法')
+    expect(store.posts).toHaveLength(0)
   })
 })
 

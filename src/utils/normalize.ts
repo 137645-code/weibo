@@ -3,7 +3,7 @@ import {
   DEFAULT_AUTHOR,
   MAX_AUTHOR_LENGTH,
   MAX_LOCATION_LENGTH,
-} from '@/constants/feed'
+} from '../constants/feed'
 
 /**
  * 昵称归一化：去首尾空白、截断 20 字，空值回落到默认昵称。

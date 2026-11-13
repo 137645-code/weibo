@@ -3,25 +3,30 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Spark · 星火 — 本地信息流应用（Vue 3 + Pinia + LocalStorage）",
+  "description": "Spark · 星火 — 信息流应用（Vue 3 + Pinia + Hono RESTful API + 内存存储）",
   "scripts": {
     "dev": "vite",
+    "server": "tsx server/index.ts",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.8",
+    "hono": "^4.13.18",
     "pinia": "^4.1.0",
     "vue": "^3.5.45"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "^6.0.11",
     "@vitest/coverage-v8": "^5.1.0",
     "@vue/test-utils": "^2.5.1",
     "jsdom": "^31.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.3.8",
     "vitest": "^5.1.0",

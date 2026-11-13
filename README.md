@@ -1,11 +1,11 @@
 # Spark · 星火
 
-一个极简的本地信息流应用：发布动态、按时间倒序浏览，数据只保存在你自己的浏览器里。
+一个极简的信息流应用：发布动态、按时间倒序浏览。数据不再存在浏览器里，而是通过 **Hono + RESTful API + 内存存储** 的后端服务统一读写。
 
-- **技术栈**：Node.js + Vite + Vue 3（Composition API + `<script setup>`）+ TypeScript + Pinia
-- **数据存储**：浏览器 LocalStorage，键名 `feed_posts_v1`，与旧版完全兼容
-- **开发方式**：TDD（测试先行的红 → 绿 → 重构），测试覆盖工具层、状态层、组件层与整体集成
-- **无后端、无账号**，所有内容只存在本机
+- **前端**：Vue 3（Composition API + `<script setup>`）+ TypeScript + Pinia + Vite
+- **后端**：Hono（路由）+ `@hono/node-server`（运行时）+ 进程内内存存储
+- **数据流**：组件 → Pinia store → `fetch` → `/api/posts` → 内存仓储；前端不再接触 LocalStorage
+- **开发方式**：TDD（红 → 绿 → 重构），单测 / 契约测 / 组件测 / 集成测 / 真实浏览器验收
 
 ## 运行方式
 
@@ -13,93 +13,76 @@
 
 ```bash
 npm install
-npm run dev        # 本地开发，默认 http://localhost:5173
+npm run dev        # 前端 + /api 同一端口：http://localhost:5173
+npm run server     # 独立后端进程：http://localhost:8787（有 dist 时同时托管前端）
 npm run build      # 类型检查 + 生产构建，产物在 dist/
-npm run preview    # 预览构建产物
+npm run preview    # 预览构建产物（同样带 /api）
 ```
+
+开发与预览模式下，Hono 应用以 **Vite 中间件** 的形式挂在同一个端口上（见 `server/vite-plugin.ts`），因此不需要第二个进程、不需要配置代理，前端始终用同源相对路径 `/api` 请求。
+
+生产部署时 `npm run server` 会启动 `server/index.ts`：先挂 `/api` 路由，再把 `dist/` 作为静态资源与 SPA 兜底（`/api/*` 的 404 不会被 `index.html` 吞掉，见 `server/serverApp.ts`）。
 
 ## 测试
 
 ```bash
-npm test           # 单次运行全部单元 + 组件 + 集成测试
-npm run test:watch # 监听模式，TDD 开发时使用
-npm run test:coverage # 生成覆盖率报告（coverage/）
-npm run typecheck  # vue-tsc 类型检查
+npm test              # 单次运行全部单元 / 契约 / 组件 / 集成测试
+npm run test:watch    # 监听模式，TDD 开发时使用
+npm run test:coverage # 覆盖率报告（coverage/）
+npm run typecheck     # 前端（vue-tsc）+ 服务端（tsc）双份类型检查
 ```
 
-当前规模：**13 个测试文件 / 100 个用例**，全部通过。
+当前规模：**16 个测试文件 / 147 个用例**，全部通过。
 
 | 层次 | 测试文件 | 覆盖内容 |
 | --- | --- | --- |
-| 纯函数 | `utils/__tests__/normalize.spec.ts` | 昵称、头像索引、地点的归一化与边界值 |
-| 纯函数 | `utils/__tests__/format.spec.ts` | 时间格式化补零、非法时间、头像路径补零 |
-| 纯函数 | `utils/__tests__/geo.spec.ts` | 球面距离、最近城市匹配、200km 阈值 |
-| 纯函数 | `utils/__tests__/post.spec.ts` | 动态构造、空正文、id 生成、注入时钟 |
-| 持久化 | `utils/__tests__/storage.spec.ts` | 脏数据过滤、兼容旧数据、JSON 损坏、配额失败 |
-| 状态 | `stores/__tests__/feed.spec.ts` | 初始化、倒序派生、发布校验、写入失败降级 |
-| 能力 | `composables/__tests__/useGeolocation.spec.ts` | 无 API、拒绝授权、超时异常、命中/未命中 |
-| 组件 | `components/__tests__/*.spec.ts` | 品牌区、提示条、发布区交互、单条卡片、列表与空状态 |
-| 集成 | `__tests__/App.spec.ts` | 首屏读取、发布流程、存储降级、定位全链路 |
+| 内存仓储 | `server/__tests__/store.spec.ts` | 倒序与同毫秒次序、副本隔离、id 去重、seed/reset/count |
+| HTTP 契约 | `server/__tests__/app.spec.ts` | 状态码、`Location` 头、错误码、405/413/415、500 兜底 |
+| 生产装配 | `server/__tests__/serverApp.spec.ts` | `/api` 404 与 SPA 兜底的边界、静态资源回落 |
+| 传输层 | `src/utils/__tests__/api.spec.ts` | 脏数据过滤、超时降级、4xx 错误码映射、baseUrl 归一化 |
+| 状态层 | `src/stores/__tests__/feed.spec.ts` | 异步首屏、加载与发布交错、并发提交、服务恢复、定位状态 |
+| 纯函数 | `src/utils/__tests__/{normalize,format,geo,post}.spec.ts` | 归一化、时间格式化、城市匹配、动态构造 |
+| 能力 | `src/composables/__tests__/useGeolocation.spec.ts` | 无 API、拒绝授权、超时、命中/未命中 |
+| 组件 | `src/components/__tests__/*.spec.ts` | 品牌区、提示条、发布区、单条卡片、列表与加载态 |
+| 集成 | `src/__tests__/App.spec.ts` | 首屏读取、发布链路、服务不可用降级、定位全链路 |
 
-## TDD 实践
+测试替身不手写 fetch mock：`src/test/fakeServer.ts` 直接把**真实的 Hono 应用**接到全局 `fetch` 上，前端测试跑的是完整 HTTP 契约；服务端测试用 `// @vitest-environment node` 直接 `app.request()`。
 
-实现按「由内向外」分层推进，每一层都先写断言、确认失败，再写实现：
+## API
 
-1. **工具层**：`normalize` / `format` / `geo` / `post` / `storage`。纯函数与持久化契约先行，用测试锁定旧版全部业务规则（截断长度、越界回落、脏数据过滤、异常降级）。
-2. **状态层**：`stores/feed.ts`。测试直接操作真实 Pinia 实例与 `localStorage`，验证倒序派生、空内容拒绝、写入失败保留内存数据。
-3. **组件层**：`AppHeader` / `StorageNotice` / `PostComposer` / `PostItem` / `PostFeed`。以可访问性与样式类名作为断言依据（黑盒），不依赖内部实现细节。
-4. **集成层**：`App.spec.ts`。从「打开页面 → 发布 → 刷新读取 → 定位降级」跑通完整链路。
+所有响应都是 JSON。成功返回资源体，失败统一返回 `{ "error": { "code": string, "message": string } }`，`message` 只面向开发者，UI 文案由前端按 `code` 决定。
 
-可测性的两个关键设计：
+| 方法 | 路径 | 说明 | 成功 |
+| --- | --- | --- | --- |
+| GET | `/api/health` | 服务健康与当前条数 | 200 `{ status, storage, posts }` |
+| GET | `/api/posts` | 全部动态，按时间倒序 | 200 `{ posts, total }` |
+| GET | `/api/posts/:id` | 单条动态 | 200 `{ post }` |
+| POST | `/api/posts` | 发布动态（JSON 请求体） | 201 `{ post }` + `Location` 头 |
 
-- **依赖注入**：`createPostStorage(storage?)` 接受任意 `Storage` 实现；`createPost(draft, { now, random })` 接受时钟与随机源。测试无需污染全局，也无需 mock 计时器即可断言 id 生成与写入失败路径。
-- **结果对象代替抛错**：存储读写返回 `{ list, ok }` / `boolean`，发布返回 `{ ok: true, post } | { ok: false, reason }`。状态层不感知 UI 文案，提示文案由组件决定。
+发布请求：
 
-## 功能
-
-| 功能 | 说明 |
-| --- | --- |
-| 发布动态 | 顶部输入框填写文本，点击「发布」新增一条 |
-| 作者昵称 | 发布时可填写昵称（最多 20 字），留空显示「匿名用户」 |
-| 头像 | 内置 10 张插画头像供单选，选中状态随动态保存 |
-| 发布地点 | 浏览器定位后自动匹配城市名，获取失败则该条不显示地点 |
-| 信息流展示 | 所有动态按发布时间倒序排列，最新在最上 |
-| 本地持久化 | 刷新页面、重启浏览器后数据仍在 |
-| 单条展示 | 显示头像、昵称、发布时间、地点（有则显示）与文本内容 |
-
-发布后只清空正文，昵称与头像选择保留，方便连续发布。
-
-## 不做的功能
-
-为保证最小可用，以下均**未实现**：评论、点赞、删除、图片上传、用户登录、深色模式、分页、分享、搜索、话题标签。
-
-## 目录结构
-
-```
-.
-├── index.html                  # Vite 入口
-├── vite.config.ts              # Vite + Vitest 统一配置
-├── tsconfig.app.json           # 应用侧 TS 配置（strict）
-├── tsconfig.node.json          # 构建脚本 TS 配置
-├── public/avatars/             # 10 张本地头像 avatar-01.jpg … avatar-10.jpg
-├── legacy/index.html           # 旧版单文件原生实现（归档对照，可直接双击运行）
-└── src/
-    ├── main.ts                 # 创建应用、挂载 Pinia、引入全局样式
-    ├── App.vue                 # 页面骨架：装饰光斑 + 品牌区 + 提示条 + 发布区 + 信息流
-    ├── styles/main.css         # 设计令牌、渐变背景、卡片、胶囊按钮、响应式
-    ├── types/post.ts           # Post / PostStorage / AddPostResult 等类型契约
-    ├── constants/feed.ts       # 存储键、长度上限、文案常量
-    ├── utils/                  # normalize / format / storage / post / geo
-    ├── composables/            # useGeolocation
-    ├── stores/feed.ts          # Pinia store
-    └── components/             # AppHeader / StorageNotice / PostComposer / PostItem / PostFeed
+```bash
+curl -X POST http://localhost:5173/api/posts \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"今天的第一条动态","author":"林一","avatar":2,"location":"上海"}'
 ```
 
-测试文件与源码同目录放置在 `__tests__/`，命名 `*.spec.ts`。
+错误码：
+
+| code | HTTP | 触发条件 |
+| --- | --- | --- |
+| `EMPTY_CONTENT` | 400 | 正文缺失或去空白后为空 |
+| `CONTENT_TOO_LONG` | 400 | 正文超过 500 字 |
+| `INVALID_BODY` | 400 | 请求体不是合法 JSON 或不是对象 |
+| `PAYLOAD_TOO_LARGE` | 413 | 请求体超过 16KB |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | `Content-Type` 不是 `application/json` |
+| `NOT_FOUND` | 404 | 资源或路由不存在 |
+| `METHOD_NOT_ALLOWED` | 405 | 路径存在但方法不支持（含 `Allow` 头） |
+| `INTERNAL_ERROR` | 500 | 未捕获异常 |
+
+前端按错误码映射为失败原因：`empty` / `too-long` / `unavailable`，组件据此选择提示文案，状态层不持有任何 UI 文案。
 
 ## 数据结构
-
-存储键：`localStorage['feed_posts_v1']`，值为 JSON 数组，每个元素：
 
 ```json
 {
@@ -114,34 +97,80 @@ npm run typecheck  # vue-tsc 类型检查
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | string | 唯一标识，由时间戳 36 进制与随机串拼接 |
-| `content` | string | 动态正文（已去除首尾空白） |
-| `createdAt` | number | 毫秒时间戳，用于倒序排序与展示格式化 |
-| `author` | string | 昵称，读取时归一化，空值回落为「匿名用户」 |
-| `avatar` | number | 头像索引 0~9，非法值回落为 0 |
-| `location` | string \| null | 城市名，`null` 表示未获取到，渲染时不显示 |
+| `id` | string | 唯一标识，时间戳 36 进制 + 随机串；撞号时自动加后缀 |
+| `content` | string | 正文（已去除首尾空白） |
+| `createdAt` | number | 毫秒时间戳，倒序排序与展示格式化的依据 |
+| `author` | string | 昵称，最多 20 字，空值回落「匿名用户」 |
+| `avatar` | number | 头像索引 0~9，越界回落 0 |
+| `location` | string \| null | 城市名，`null` 时前端不展示 |
 
-`author` / `avatar` / `location` 为后加的可选字段：旧数据缺少这些字段时，读取阶段统一补默认值，不需要迁移存储键。旧版页面与新版本读写的是同一份数据，可互相打开。
+归一化与构造只有一处实现（`src/utils/post.ts` / `src/utils/normalize.ts`），服务端写入时调用；前端在解析响应时做一次宽松校验，字段不合法的那一条会被丢弃而不是拖垮整个列表。
 
-## 头像与定位说明
+## TDD 实践
 
-- **头像**：10 张几何插画头像存放在 `public/avatars/avatar-01.jpg … avatar-10.jpg`（256×256、JPEG），页面用相对路径引用，不依赖任何外链；发布区用原生 radio 单选，选择结果只保存索引值，越界自动回落到第 1 张。
-- **图片兜底**：头像加载失败时隐藏图片，由容器的淡蓝粉渐变兜底，不会出现破图。
-- **地点**：页面挂载后通过 `navigator.geolocation` 请求定位（需用户授权），拿到经纬度后与内置的城市坐标表做 Haversine 最近距离匹配，200km 内命中即显示城市名，例如「上海」；发布区会提示「定位中… / 已定位：上海 / 位置不可用」。
-- **降级策略**：拒绝授权、超时（8 秒）或坐标超出所有已知城市范围时，状态显示「位置不可用」，该条动态不显示地点，页面其余功能不受影响。
-- **近似性**：坐标表只覆盖主要城市，县级地区会显示邻近的大中城市名。定位结果不写入 LocalStorage，只随单条动态保存城市名，不保存原始经纬度。
+实现按「由内向外」推进，每层都先写断言、确认失败，再写实现：
+
+1. **内存仓储**：`createPostStore()` 先由测试定义契约（倒序、副本、id 唯一），再实现。
+2. **HTTP 契约**：先用 `app.request()` 断言状态码、`Location`、错误码、405/413/415，再实现路由与 `bodyLimit`。
+3. **生产装配**：先用临时 `dist/` 断言「`/api` 的 404 不会被 SPA 兜底吞成 200 HTML」，再实现 `createServerApp()`。
+4. **传输层**：注入 `fetchImpl` 断言错误码映射、超时降级、`baseUrl` 归一化，再实现 `createPostApi()`。
+5. **状态层**：用真实 Hono 应用驱动，断言首屏加载、发布、加载与发布交错不丢数据、服务恢复后 `apiOk` 复位。
+6. **组件层**：黑盒断言可访问性与类名，异步提交用微任务刷新而不是假计时器与 `setTimeout` 硬等。
+7. **浏览器验收**：用真实 Chromium（Edge）跑「空态 → 发布 → 刷新仍存在 → 空内容提示」全链路。
+
+可测性的关键设计：
+
+- **依赖注入**：`createApp({ store })` 接受任意仓储实现；`createPostApi({ fetchImpl, baseUrl, timeoutMs })` 接受传输层替身；`createPostStore({ now, random })` 接受时钟与随机源。
+- **结果对象代替抛错**：传输层用 `{ list, ok }` / `{ ok, post | reason }` 表达结果，网络异常、超时、结构不符一律降级，调用方无需 `try/catch`。
+- **并发保护**：`init()` 用自增序号只接受最后一次响应，并按 id 合并本地新增；`submitting` 用计数器而非布尔，避免并发发布提前解除禁用。
+
+## 目录结构
+
+```
+.
+├── index.html                  # Vite 入口（内联 SVG favicon，无外部资源）
+├── vite.config.ts              # Vite + Vitest 统一配置，挂载 server/vite-plugin
+├── tsconfig.app.json           # 前端 TS 配置（strict）
+├── tsconfig.node.json          # 构建脚本 + server/ 的 TS 配置
+├── public/avatars/             # 10 张本地头像 avatar-01.jpg … avatar-10.jpg
+├── legacy/index.html           # 旧版单文件原生实现（归档，不参与构建与类型检查）
+├── server/
+│   ├── app.ts                  # Hono 应用：RESTful 路由、校验、错误码
+│   ├── store.ts                # 内存仓储（进程内单例，重启清空）
+│   ├── serverApp.ts            # 生产装配：API + dist 静态资源与 SPA 兜底
+│   ├── vite-plugin.ts          # dev / preview 下把 Hono 挂到 Vite 中间件
+│   ├── index.ts                # 独立后端进程入口（PORT，默认 8787）
+│   └── __tests__/              # 仓储、HTTP 契约、生产装配测试
+└── src/
+    ├── main.ts                 # 创建应用、挂载 Pinia、引入全局样式
+    ├── App.vue                 # 页面骨架 + 首屏异步加载与定位
+    ├── styles/main.css         # 设计令牌、渐变背景、卡片、胶囊按钮、响应式
+    ├── types/post.ts           # Post / PostApi / AddPostResult 等类型契约
+    ├── constants/feed.ts       # 长度上限、提示文案常量
+    ├── utils/                  # api（HTTP 客户端）/ post / normalize / format / geo
+    ├── composables/             # useGeolocation
+    ├── stores/feed.ts          # Pinia store（异步数据源、并发保护）
+    ├── test/                   # fakeServer（真实 Hono + fetch 适配器）、setup
+    └── components/             # AppHeader / ServerNotice / PostComposer / PostItem / PostFeed
+```
+
+测试文件与源码同目录放在 `__tests__/`，命名 `*.spec.ts`。
 
 ## 健壮性
 
-- 读取与写入 LocalStorage 均由 `try / catch` 包裹，解析失败或存储被禁用时降级为空列表，不会抛出错误。
-- 解析后逐条校验字段类型，自动过滤损坏数据，并为缺失的昵称 / 头像 / 地点字段补默认值。
-- 写入失败（隐私模式、配额超限）时页面顶部显示提示条，内容在本次会话内仍可正常查看。
-- 用户文本统一通过 Vue 插值渲染，不使用 `v-html`，避免标签注入；定位全程异常捕获，失败仅降级不报错。
+- 传输层：请求 8 秒超时后主动中止并降级；非 2xx、响应结构不符、网络异常都不抛错。
+- 首屏：加载期间不展示「还没有内容」，避免空状态闪烁；服务不可用时顶部提示条说明原因，页面其余功能仍可浏览。
+- 服务端：请求体 16KB 上限、只接受 JSON、正文长度与类型校验、路径存在但方法不支持回 405，未知路由回 JSON 404，未捕获异常回 500 且只记日志。
+- 并发：首屏加载的旧快照不会覆盖刚发布的动态；发布中禁用按钮并在入口做重入保护。
+- 渲染：用户文本一律 Vue 插值，无 `v-html`；头像走索引校验，加载失败时由渐变兜底。
 
-## 旧版归档
+## 已知边界与不做的事
 
-`legacy/index.html` 保留了重构前的单文件原生实现（头像路径已改为指向 `../public/avatars/`），可直接双击对照运行。新版本行为以其为基准逐条迁移，并由测试固化。
+- **内存存储**：数据只存在当前进程，重启即清空；多实例之间不共享。这是本次替换的刻意取舍，换成数据库时只需实现同一个 `PostStore` 契约。
+- 无分页 / 无上限：`GET /api/posts` 返回全量，数据量增长后需要补分页。
+- 为保证最小可用，以下均**未实现**：删除/编辑动态、评论、点赞、图片上传、用户登录、搜索、话题标签、限流与鉴权。
+- `legacy/index.html` 是 LocalStorage 时代的单文件实现，仅作对照归档，读写的是浏览器本地数据，与新版本不共享数据。
 
 ## 浏览器兼容
 
-支持 Chrome、Edge、Firefox、Safari 等现代浏览器。`file://` 方式打开时部分浏览器对 LocalStorage 有限制，开发环境请使用 `npm run dev` 或预览构建产物。
+支持 Chrome、Edge、Firefox、Safari 等现代浏览器（需要 `fetch`、`AbortController`）。开发与验收请使用 `npm run dev` 或 `npm run preview`，不要用 `file://` 直接打开。

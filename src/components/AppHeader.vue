@@ -29,6 +29,6 @@
     </span>
     <h1 class="page-title">Spark</h1>
     <p class="page-name-cn">星火</p>
-    <p class="page-subtitle">把此刻的想法留在这里，内容仅保存在本机浏览器</p>
+    <p class="page-subtitle">把此刻的想法留在这里，内容由服务端的内存保存</p>
   </header>
 </template>

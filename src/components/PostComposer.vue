@@ -7,9 +7,19 @@ import {
   HINT_RESET_DELAY,
   MAX_AUTHOR_LENGTH,
   MAX_CONTENT_LENGTH,
+  PUBLISH_FAILED_HINT,
+  TOO_LONG_HINT,
 } from '@/constants/feed'
 import { useFeedStore } from '@/stores/feed'
+import type { AddPostFailureReason } from '@/types/post'
 import { avatarSrc } from '@/utils/format'
+
+/** 失败原因到提示文案的映射，文案只在这里出现 */
+const FAILURE_HINTS: Record<AddPostFailureReason, string> = {
+  empty: EMPTY_CONTENT_HINT,
+  'too-long': TOO_LONG_HINT,
+  unavailable: PUBLISH_FAILED_HINT,
+}
 
 const feed = useFeedStore()
 
@@ -55,19 +65,25 @@ const locationText = computed(() => {
 
 const locationWarn = computed(() => feed.locationStatus === 'unavailable')
 
-/** 发布：校验 → 入列 → 持久化；只清空正文，保留昵称与头像便于连续发布 */
+/** 发布：交给服务端校验入库；成功才清空正文，保留昵称与头像便于连续发布 */
 async function handleSubmit(): Promise<void> {
-  const result = feed.addPost({
+  // 回车提交也能绕过按钮的 disabled，这里做一次入口保护
+  if (feed.submitting) return
+
+  const result = await feed.addPost({
     content: content.value,
     author: author.value,
     avatar: avatar.value,
   })
 
+  if (!result.ok) {
+    showHint(FAILURE_HINTS[result.reason], true)
+    return
+  }
+
   content.value = ''
   await nextTick()
   textareaRef.value?.focus()
-
-  if (!result.ok) showHint(EMPTY_CONTENT_HINT, true)
 }
 
 /** 头像加载失败时隐藏图片，由容器渐变兜底 */
@@ -140,7 +156,7 @@ function hideBrokenImage(event: Event): void {
         </span>
         <span class="hint-text" :data-state="hintWarn ? 'warn' : 'normal'">{{ hintText }}</span>
       </span>
-      <button class="btn-submit" type="submit">发布</button>
+      <button class="btn-submit" type="submit" :disabled="feed.submitting">发布</button>
     </div>
   </form>
 </template>

@@ -11,6 +11,6 @@ const feed = useFeedStore()
     <ul class="feed">
       <PostItem v-for="post in feed.sortedPosts" :key="post.id" :post="post" />
     </ul>
-    <p v-if="feed.isEmpty" class="empty">{{ EMPTY_FEED_TEXT }}</p>
+    <p v-if="feed.isEmpty && feed.initialized" class="empty">{{ EMPTY_FEED_TEXT }}</p>
   </main>
 </template>

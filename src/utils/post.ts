@@ -1,4 +1,4 @@
-import type { Post, PostDraft } from '@/types/post'
+import type { Post, PostDraft } from '../types/post'
 import { normalizeAuthor, normalizeAvatar, normalizeLocation } from './normalize'
 
 /** 可注入的时钟与随机源，便于测试得到确定结果 */
