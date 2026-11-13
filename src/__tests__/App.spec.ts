@@ -2,7 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../App.vue'
-import { API_NOTICE_TEXT, EMPTY_CONTENT_HINT, EMPTY_FEED_TEXT } from '@/constants/feed'
+import {
+  API_NOTICE_TEXT,
+  EMPTY_CONTENT_HINT,
+  EMPTY_FAVORITE_TEXT,
+  EMPTY_FEED_TEXT,
+  REACTION_FAILED_HINT,
+} from '@/constants/feed'
 import { useFeedStore } from '@/stores/feed'
 import { seedPosts, storedPosts } from '@/test/fakeServer'
 import type { Post } from '@/types/post'
@@ -109,6 +115,80 @@ describe('App - 发布流程', () => {
     expect(wrapper.find('.hint-text').text()).toBe(EMPTY_CONTENT_HINT)
     expect(wrapper.findAll('.feed-item')).toHaveLength(0)
     expect(storedPosts()).toHaveLength(0)
+  })
+})
+
+describe('App - 点赞与收藏', () => {
+  it('点赞写入服务端，重新挂载后仍保持已点赞', async () => {
+    seedPosts([STORED_POST])
+    const { wrapper } = mountApp()
+    await flushPromises()
+
+    await wrapper.find('.feed-action-like').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.feed-action-count').text()).toBe('1')
+    expect(wrapper.find('.feed-action-like').attributes('aria-pressed')).toBe('true')
+    expect(storedPosts()[0]).toMatchObject({ liked: true, likes: 1 })
+
+    // 重新挂载等价于刷新页面：状态来自服务端而不是本地内存
+    const reloaded = mountApp()
+    await flushPromises()
+
+    expect(reloaded.wrapper.find('.feed-action-count').text()).toBe('1')
+    expect(reloaded.wrapper.find('.feed-action-like').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('取消点赞后计数归零', async () => {
+    seedPosts([{ ...STORED_POST, liked: true, likes: 1 }])
+    const { wrapper } = mountApp()
+    await flushPromises()
+
+    await wrapper.find('.feed-action-like').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.feed-action-count').text()).toBe('0')
+    expect(storedPosts()[0]).toMatchObject({ liked: false, likes: 0 })
+  })
+
+  it('收藏后可在「我的收藏」中筛选到，取消后回到收藏空态', async () => {
+    seedPosts([
+      { ...STORED_POST, id: 'a', content: '第一条动态', createdAt: 1 },
+      { ...STORED_POST, id: 'b', content: '第二条动态', createdAt: 2 },
+    ])
+    const { wrapper } = mountApp()
+    await flushPromises()
+
+    // 倒序渲染，第二条动态在索引 0
+    await wrapper.findAll('.feed-item')[1].find('.feed-action-favorite').trigger('click')
+    await flushPromises()
+
+    expect(storedPosts().find((post) => post.id === 'a')).toMatchObject({ favorited: true })
+
+    await wrapper.findAll('.filter-tab')[1].trigger('click')
+
+    expect(wrapper.findAll('.feed-content').map((node) => node.text())).toEqual(['第一条动态'])
+
+    await wrapper.find('.feed-action-favorite').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.empty').text()).toBe(EMPTY_FAVORITE_TEXT)
+  })
+
+  it('互动接口失败时回滚并给出轻提示，页面其余功能仍可用', async () => {
+    seedPosts([STORED_POST])
+    const { wrapper } = mountApp()
+    await flushPromises()
+
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')))
+
+    await wrapper.find('.feed-action-favorite').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.feed-alert').text()).toBe(REACTION_FAILED_HINT)
+    expect(wrapper.find('.feed-action-favorite').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('.feed-content').text()).toBe('历史动态')
+    expect(storedPosts()[0]).toMatchObject({ favorited: false })
   })
 })
 

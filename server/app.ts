@@ -103,7 +103,8 @@ export function createApp(options: CreateAppOptions = {}): Hono {
    * 因此重复 PUT / DELETE 都幂等，网络重试不会把计数刷乱。
    */
   const reactionHandler = (apply: (id: string) => Post | undefined) => (c: Context) => {
-    const post = apply(c.req.param('id'))
+    const id = c.req.param('id')
+    const post = id ? apply(id) : undefined
     if (!post) return c.json(errorBody('NOT_FOUND', 'post not found'), 404)
 
     return c.json({ post })

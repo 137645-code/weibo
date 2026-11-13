@@ -1,10 +1,11 @@
 # Spark · 星火
 
-一个极简的信息流应用：发布动态、按时间倒序浏览。数据不再存在浏览器里，而是通过 **Hono + RESTful API + 内存存储** 的后端服务统一读写。
+一个极简的信息流应用：发布动态、按时间倒序浏览、点赞与收藏。数据不再存在浏览器里，而是通过 **Hono + RESTful API + 内存存储** 的后端服务统一读写。
 
 - **前端**：Vue 3（Composition API + `<script setup>`）+ TypeScript + Pinia + Vite
 - **后端**：Hono（路由）+ `@hono/node-server`（运行时）+ 进程内内存存储
 - **数据流**：组件 → Pinia store → `fetch` → `/api/posts` → 内存仓储；前端不再接触 LocalStorage
+- **互动**：点赞（计数 + 是否已赞）与收藏（是否已收藏），幂等接口 + 乐观更新 + 失败回滚
 - **开发方式**：TDD（红 → 绿 → 重构），单测 / 契约测 / 组件测 / 集成测 / 真实浏览器验收
 
 ## 运行方式
@@ -32,19 +33,19 @@ npm run test:coverage # 覆盖率报告（coverage/）
 npm run typecheck     # 前端（vue-tsc）+ 服务端（tsc）双份类型检查
 ```
 
-当前规模：**16 个测试文件 / 147 个用例**，全部通过。
+当前规模：**16 个测试文件 / 204 个用例**，全部通过。
 
 | 层次 | 测试文件 | 覆盖内容 |
 | --- | --- | --- |
-| 内存仓储 | `server/__tests__/store.spec.ts` | 倒序与同毫秒次序、副本隔离、id 去重、seed/reset/count |
-| HTTP 契约 | `server/__tests__/app.spec.ts` | 状态码、`Location` 头、错误码、405/413/415、500 兜底 |
+| 内存仓储 | `server/__tests__/store.spec.ts` | 倒序与同毫秒次序、副本隔离、id 去重、点赞幂等与计数边界、收藏切换、seed/reset/count |
+| HTTP 契约 | `server/__tests__/app.spec.ts` | 状态码、`Location` 头、错误码、405/413/415、互动路由 404/405 与 `Allow`、500 兜底 |
 | 生产装配 | `server/__tests__/serverApp.spec.ts` | `/api` 404 与 SPA 兜底的边界、静态资源回落 |
-| 传输层 | `src/utils/__tests__/api.spec.ts` | 脏数据过滤、超时降级、4xx 错误码映射、baseUrl 归一化 |
-| 状态层 | `src/stores/__tests__/feed.spec.ts` | 异步首屏、加载与发布交错、并发提交、服务恢复、定位状态 |
-| 纯函数 | `src/utils/__tests__/{normalize,format,geo,post}.spec.ts` | 归一化、时间格式化、城市匹配、动态构造 |
+| 传输层 | `src/utils/__tests__/api.spec.ts` | 脏数据过滤、超时降级、4xx 错误码映射、baseUrl 归一化、互动字段解析与 PUT/DELETE |
+| 状态层 | `src/stores/__tests__/feed.spec.ts` | 异步首屏、加载与发布交错、并发提交、服务恢复、定位状态、乐观更新与回滚、收藏筛选 |
+| 纯函数 | `src/utils/__tests__/{normalize,format,geo,post}.spec.ts` | 归一化（含计数/布尔）、时间格式化、城市匹配、动态构造 |
 | 能力 | `src/composables/__tests__/useGeolocation.spec.ts` | 无 API、拒绝授权、超时、命中/未命中 |
-| 组件 | `src/components/__tests__/*.spec.ts` | 品牌区、提示条、发布区、单条卡片、列表与加载态 |
-| 集成 | `src/__tests__/App.spec.ts` | 首屏读取、发布链路、服务不可用降级、定位全链路 |
+| 组件 | `src/components/__tests__/*.spec.ts` | 品牌区、提示条、发布区、单条卡片的互动栏、筛选器与失败提示 |
+| 集成 | `src/__tests__/App.spec.ts` | 首屏读取、发布链路、点赞/收藏全链路（含刷新后仍保持）、服务不可用降级、定位全链路 |
 
 测试替身不手写 fetch mock：`src/test/fakeServer.ts` 直接把**真实的 Hono 应用**接到全局 `fetch` 上，前端测试跑的是完整 HTTP 契约；服务端测试用 `// @vitest-environment node` 直接 `app.request()`。
 
@@ -58,6 +59,12 @@ npm run typecheck     # 前端（vue-tsc）+ 服务端（tsc）双份类型检�
 | GET | `/api/posts` | 全部动态，按时间倒序 | 200 `{ posts, total }` |
 | GET | `/api/posts/:id` | 单条动态 | 200 `{ post }` |
 | POST | `/api/posts` | 发布动态（JSON 请求体） | 201 `{ post }` + `Location` 头 |
+| PUT | `/api/posts/:id/like` | 点赞（幂等） | 200 `{ post }` |
+| DELETE | `/api/posts/:id/like` | 取消点赞（幂等） | 200 `{ post }` |
+| PUT | `/api/posts/:id/favorite` | 收藏（幂等） | 200 `{ post }` |
+| DELETE | `/api/posts/:id/favorite` | 取消收藏（幂等） | 200 `{ post }` |
+
+互动接口表达的是**目标状态**而非取反：重复 `PUT` 不会把点赞数刷高，重复 `DELETE` 也不会出现负数，网络重试天然安全。
 
 发布请求：
 
@@ -91,7 +98,10 @@ curl -X POST http://localhost:5173/api/posts \
   "createdAt": 1763000000000,
   "author": "林一",
   "avatar": 2,
-  "location": "上海"
+  "location": "上海",
+  "likes": 12,
+  "liked": true,
+  "favorited": false
 }
 ```
 
@@ -103,6 +113,9 @@ curl -X POST http://localhost:5173/api/posts \
 | `author` | string | 昵称，最多 20 字，空值回落「匿名用户」 |
 | `avatar` | number | 头像索引 0~9，越界回落 0 |
 | `location` | string \| null | 城市名，`null` 时前端不展示 |
+| `likes` | number | 点赞总数，非负整数；与 `liked` 保持一致 |
+| `liked` | boolean | 当前访客是否已点赞；无鉴权，服务端按单一访客维护 |
+| `favorited` | boolean | 当前访客是否已收藏 |
 
 归一化与构造只有一处实现（`src/utils/post.ts` / `src/utils/normalize.ts`），服务端写入时调用；前端在解析响应时做一次宽松校验，字段不合法的那一条会被丢弃而不是拖垮整个列表。
 
@@ -115,8 +128,10 @@ curl -X POST http://localhost:5173/api/posts \
 3. **生产装配**：先用临时 `dist/` 断言「`/api` 的 404 不会被 SPA 兜底吞成 200 HTML」，再实现 `createServerApp()`。
 4. **传输层**：注入 `fetchImpl` 断言错误码映射、超时降级、`baseUrl` 归一化，再实现 `createPostApi()`。
 5. **状态层**：用真实 Hono 应用驱动，断言首屏加载、发布、加载与发布交错不丢数据、服务恢复后 `apiOk` 复位。
-6. **组件层**：黑盒断言可访问性与类名，异步提交用微任务刷新而不是假计时器与 `setTimeout` 硬等。
-7. **浏览器验收**：用真实 Chromium（Edge）跑「空态 → 发布 → 刷新仍存在 → 空内容提示」全链路。
+6. **互动接口**：先写幂等与边界断言（重复 `PUT` 不重复计数、重复 `DELETE` 不为负、未知 id 404、方法不支持 405 + `Allow`、脏 seed 归一化），再实现仓储与路由。
+7. **互动交互**：状态层先写「乐观更新 → 在途保护 → 失败字段级回滚 → 刷新不覆盖在途意图」，组件层再断言 `aria-pressed`、禁用态与文案切换。
+8. **组件层**：黑盒断言可访问性与类名，异步提交用微任务刷新而不是假计时器与 `setTimeout` 硬等。
+9. **浏览器验收**：用真实 Chromium 跑「空态 → 发布 → 点赞 → 收藏 → 刷新仍存在 → 收藏筛选」全链路。
 
 可测性的关键设计：
 
@@ -167,8 +182,9 @@ curl -X POST http://localhost:5173/api/posts \
 ## 已知边界与不做的事
 
 - **内存存储**：数据只存在当前进程，重启即清空；多实例之间不共享。这是本次替换的刻意取舍，换成数据库时只需实现同一个 `PostStore` 契约。
+- **互动无鉴权**：没有登录体系，服务端按「单一访客」维护 `liked` / `favorited`，所有人看到的是同一份互动状态；接入账号后需要把这两个字段改为按用户维度存储。
 - 无分页 / 无上限：`GET /api/posts` 返回全量，数据量增长后需要补分页。
-- 为保证最小可用，以下均**未实现**：删除/编辑动态、评论、点赞、图片上传、用户登录、搜索、话题标签、限流与鉴权。
+- 为保证最小可用，以下均**未实现**：删除/编辑动态、评论、图片上传、用户登录、搜索、话题标签、限流与鉴权。
 - `legacy/index.html` 是 LocalStorage 时代的单文件实现，仅作对照归档，读写的是浏览器本地数据，与新版本不共享数据。
 
 ## 浏览器兼容
