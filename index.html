@@ -28,6 +28,27 @@
   /* ---------- 基础重置 ---------- */
   * { box-sizing: border-box; }
 
+  /* 仅屏幕阅读器可见 */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* 头像精灵图容器：不占布局 */
+  .svg-sprite {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
   body {
     margin: 0;
     padding: var(--space-page) 0 64px;
@@ -99,6 +120,90 @@
 
   .composer-input::placeholder { color: var(--color-text-hint); }
 
+  /* 昵称输入 + 定位状态一行 */
+  .composer-fields {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .composer-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 0;
+    outline: 0;
+    background: #FFFFFF;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 15px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+
+  .composer-name:focus {
+    border-color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px var(--color-primary);
+  }
+
+  .composer-name::placeholder { color: var(--color-text-hint); }
+
+  .loc-status {
+    flex: none;
+    font-size: 12px;
+    color: var(--color-text-hint);
+    white-space: nowrap;
+  }
+
+  .loc-status[data-state="warn"] { color: #A4262C; }
+
+  /* 头像选择器：5 个方形缩略图，选中态由 CSS 兄弟选择器控制 */
+  .avatar-field {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+  }
+
+  .avatar-radio {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .avatar-option {
+    display: block;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--color-divider);
+    cursor: pointer;
+    transition: border-color .15s ease;
+  }
+
+  .avatar-option svg { display: block; width: 100%; height: 100%; }
+
+  .avatar-option:hover { border-color: var(--color-border-strong); }
+
+  /* 选中：内描边加粗到 2px，不改变盒模型 */
+  .avatar-radio:checked + .avatar-option {
+    border-color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px var(--color-primary);
+  }
+
+  .avatar-radio:focus-visible + .avatar-option {
+    outline: 2px solid #000000;
+    outline-offset: 2px;
+  }
+
   .composer-actions {
     display: flex;
     align-items: center;
@@ -160,6 +265,9 @@
   }
 
   .feed-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
     padding: 20px 0;
     border-top: 1px solid var(--color-divider);
     transition: background-color .15s ease;
@@ -169,14 +277,53 @@
   /* 整行悬停底色转灰，不位移不缩放 */
   .feed-item:hover { background: var(--color-panel); }
 
-  .feed-time {
+  .feed-avatar {
+    flex: none;
+    display: block;
+    width: 40px;
+    height: 40px;
+    overflow: hidden;
+  }
+
+  .feed-avatar svg { display: block; width: 100%; height: 100%; }
+
+  /* min-width:0 防止长文本撑破布局 */
+  .feed-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 元信息行：昵称 · 时间 · 地点 */
+  .feed-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
     margin: 0 0 6px;
+    font-size: 13px;
+    color: var(--color-text-hint);
+  }
+
+  .feed-author {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .feed-time {
+    margin: 0;
     font-size: 13px;
     color: var(--color-text-hint);
     font-variant-numeric: tabular-nums;
   }
 
-  .feed-item:hover .feed-time { color: var(--color-text-sub); }
+  .feed-loc {
+    font-size: 13px;
+    color: var(--color-text-hint);
+  }
+
+  .feed-item:hover .feed-time,
+  .feed-item:hover .feed-loc { color: var(--color-text-sub); }
 
   .feed-content {
     margin: 0;
@@ -212,7 +359,13 @@
     .page-title { font-size: 26px; }
     .page-header { margin-bottom: 24px; }
     .composer { margin-bottom: 28px; }
-    .feed-item { padding: 16px 0; }
+    /* 窄屏：昵称与定位状态改为上下排列，避免挤压 */
+    .composer-fields { flex-direction: column; align-items: stretch; gap: 8px; }
+    .loc-status { align-self: flex-start; }
+    .avatar-option { width: 28px; height: 28px; }
+    .feed-item { padding: 16px 0; gap: 10px; }
+    .feed-avatar { width: 36px; height: 36px; }
+    .feed-author { font-size: 14px; }
     .feed-content { font-size: 15px; }
   }
 
@@ -226,6 +379,35 @@
 </style>
 </head>
 <body>
+<!-- 5 款内置头像：内联 SVG 精灵，不使用任何图片文件或外链 -->
+<svg class="svg-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="av-0" viewBox="0 0 40 40">
+    <rect width="40" height="40" fill="#0067B8"></rect>
+    <circle cx="20" cy="15" r="6" fill="#FFFFFF"></circle>
+    <path d="M8 38c0-6.6 5.4-12 12-12s12 5.4 12 12z" fill="#FFFFFF"></path>
+  </symbol>
+  <symbol id="av-1" viewBox="0 0 40 40">
+    <rect width="40" height="40" fill="#E5F1FB"></rect>
+    <circle cx="20" cy="20" r="9" fill="none" stroke="#0067B8" stroke-width="3"></circle>
+    <rect x="17" y="17" width="6" height="6" fill="#0067B8"></rect>
+  </symbol>
+  <symbol id="av-2" viewBox="0 0 40 40">
+    <rect width="40" height="40" fill="#505050"></rect>
+    <path d="M0 28L28 0h12L12 40H0z" fill="#FFFFFF" opacity=".9"></path>
+  </symbol>
+  <symbol id="av-3" viewBox="0 0 40 40">
+    <rect width="40" height="40" fill="#FFFFFF"></rect>
+    <rect x="6" y="6" width="10" height="10" fill="#0067B8"></rect>
+    <rect x="24" y="6" width="10" height="10" fill="#8A8886"></rect>
+    <rect x="6" y="24" width="10" height="10" fill="#8A8886"></rect>
+    <rect x="24" y="24" width="10" height="10" fill="#0067B8"></rect>
+  </symbol>
+  <symbol id="av-4" viewBox="0 0 40 40">
+    <rect width="40" height="40" fill="#8A8886"></rect>
+    <path d="M20 8l12 24H8z" fill="#FFFFFF"></path>
+  </symbol>
+</svg>
+
 <div class="layout">
   <header class="page-header">
     <h1 class="page-title">信息流</h1>
@@ -240,6 +422,34 @@
   <!-- 发布区 -->
   <form class="composer" id="composer" autocomplete="off">
     <label class="page-subtitle" for="postInput" hidden>发布新动态</label>
+
+    <!-- 昵称与定位状态 -->
+    <div class="composer-fields">
+      <input
+        class="composer-name"
+        id="postAuthor"
+        type="text"
+        maxlength="20"
+        placeholder="昵称（可选，默认匿名用户）"
+        aria-label="昵称">
+      <span class="loc-status" id="locStatus" role="status" aria-live="polite">定位中…</span>
+    </div>
+
+    <!-- 头像选择：原生 radio，纯 CSS 控制选中态 -->
+    <fieldset class="avatar-field">
+      <legend class="visually-hidden">选择头像</legend>
+      <input class="avatar-radio" type="radio" name="avatar" id="av0" value="0" checked>
+      <label class="avatar-option" for="av0" title="头像 1"><svg aria-hidden="true" focusable="false"><use href="#av-0"></use></svg></label>
+      <input class="avatar-radio" type="radio" name="avatar" id="av1" value="1">
+      <label class="avatar-option" for="av1" title="头像 2"><svg aria-hidden="true" focusable="false"><use href="#av-1"></use></svg></label>
+      <input class="avatar-radio" type="radio" name="avatar" id="av2" value="2">
+      <label class="avatar-option" for="av2" title="头像 3"><svg aria-hidden="true" focusable="false"><use href="#av-2"></use></svg></label>
+      <input class="avatar-radio" type="radio" name="avatar" id="av3" value="3">
+      <label class="avatar-option" for="av3" title="头像 4"><svg aria-hidden="true" focusable="false"><use href="#av-3"></use></svg></label>
+      <input class="avatar-radio" type="radio" name="avatar" id="av4" value="4">
+      <label class="avatar-option" for="av4" title="头像 5"><svg aria-hidden="true" focusable="false"><use href="#av-4"></use></svg></label>
+    </fieldset>
+
     <textarea
       class="composer-input"
       id="postInput"
@@ -268,9 +478,34 @@
   // 存储键名，带版本号便于日后结构演进
   var STORAGE_KEY = 'feed_posts_v1';
 
-  // 单条动态结构：{ id: string, content: string, createdAt: number }
-  // createdAt 为毫秒时间戳，既用于排序也用于格式化展示
+  // 单条动态结构：{ id, content, createdAt, author, avatar, location }
+  // createdAt 为毫秒时间戳，既用于排序也用于展示；location 允许为 null（未获取到就不显示）
   var posts = [];
+
+  var DEFAULT_AUTHOR = '匿名用户';
+  var AVATAR_COUNT = 5;                              // 与精灵图 av-0…av-4 的数量一致
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  // 昵称归一化：去首尾空白、截断 20 字，空值回落到默认昵称
+  function normalizeAuthor(value) {
+    if (typeof value !== 'string') return DEFAULT_AUTHOR;
+    var text = value.trim().slice(0, 20);
+    return text || DEFAULT_AUTHOR;
+  }
+
+  // 头像索引归一化：非法值退回 0
+  function normalizeAvatar(value) {
+    var n = typeof value === 'number' ? value : parseInt(value, 10);
+    if (!isFinite(n) || n < 0 || n >= AVATAR_COUNT) return 0;
+    return Math.floor(n);
+  }
+
+  // 地点归一化：空串与非法值统一为 null，渲染时即不显示
+  function normalizeLocation(value) {
+    if (typeof value !== 'string') return null;
+    var text = value.trim();
+    return text ? text.slice(0, 20) : null;
+  }
 
   /**
    * 从 LocalStorage 读取动态列表。
@@ -295,7 +530,11 @@
         clean.push({
           id: String(item.id || item.createdAt + '_' + i),
           content: item.content,
-          createdAt: item.createdAt
+          createdAt: item.createdAt,
+          // 旧数据没有以下字段，这里统一补默认值，实现向后兼容
+          author: normalizeAuthor(item.author),
+          avatar: normalizeAvatar(item.avatar),
+          location: normalizeLocation(item.location)
         });
       }
       return { list: clean, ok: true };
@@ -319,6 +558,97 @@
     }
   }
 
+  /* ========== 定位层：内置城市坐标表（离线匹配，不调用任何外部接口） ========== */
+
+  // [城市名, 纬度, 经度]，用于把定位得到的经纬度就近匹配成可读地名
+  var CITY_TABLE = [
+    ['北京', 39.90, 116.41], ['上海', 31.23, 121.47], ['广州', 23.13, 113.26],
+    ['深圳', 22.54, 114.06], ['天津', 39.08, 117.20], ['重庆', 29.56, 106.55],
+    ['成都', 30.57, 104.07], ['杭州', 30.27, 120.16], ['南京', 32.06, 118.80],
+    ['武汉', 30.59, 114.31], ['西安', 34.34, 108.94], ['苏州', 31.30, 120.58],
+    ['郑州', 34.75, 113.63], ['长沙', 28.23, 112.94], ['青岛', 36.07, 120.38],
+    ['沈阳', 41.81, 123.43], ['大连', 38.91, 121.61], ['厦门', 24.48, 118.09],
+    ['福州', 26.07, 119.30], ['济南', 36.65, 117.12], ['合肥', 31.82, 117.23],
+    ['昆明', 25.04, 102.71], ['南昌', 28.68, 115.86], ['贵阳', 26.65, 106.63],
+    ['南宁', 22.82, 108.37], ['太原', 37.87, 112.55], ['石家庄', 38.04, 114.51],
+    ['哈尔滨', 45.80, 126.53], ['长春', 43.82, 125.32], ['兰州', 36.06, 103.83],
+    ['乌鲁木齐', 43.83, 87.62], ['呼和浩特', 40.84, 111.75], ['银川', 38.49, 106.23],
+    ['西宁', 36.62, 101.78], ['拉萨', 29.65, 91.14], ['海口', 20.04, 110.20],
+    ['香港', 22.32, 114.17], ['台北', 25.03, 121.57], ['澳门', 22.20, 113.54]
+  ];
+
+  var CITY_RADIUS_KM = 200;   // 命中阈值：超出则视为不在已知城市附近
+  var currentLocation = null; // 当前会话的位置，发布时写入动态
+
+  function toRad(value) { return value * Math.PI / 180; }
+
+  // Haversine 球面距离（公里）
+  function distanceKm(lat1, lng1, lat2, lng2) {
+    var R = 6371;
+    var dLat = toRad(lat2 - lat1);
+    var dLng = toRad(lng2 - lng1);
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  // 在坐标表里找最近城市，超出阈值返回 null
+  function matchCity(lat, lng) {
+    var bestName = null;
+    var bestKm = Infinity;
+    for (var i = 0; i < CITY_TABLE.length; i++) {
+      var d = distanceKm(lat, lng, CITY_TABLE[i][1], CITY_TABLE[i][2]);
+      if (d < bestKm) {
+        bestKm = d;
+        bestName = CITY_TABLE[i][0];
+      }
+    }
+    return bestKm <= CITY_RADIUS_KM ? bestName : null;
+  }
+
+  // 更新发布区右侧的定位状态文案
+  function setLocStatus(text, isWarn) {
+    var el = document.getElementById('locStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.setAttribute('data-state', isWarn ? 'warn' : 'normal');
+  }
+
+  /**
+   * 请求定位并匹配城市。任何失败（无 API、拒绝授权、超时）都只降级为「位置不可用」，
+   * 不抛错、不影响发布与浏览。
+   */
+  function initLocation() {
+    if (!navigator.geolocation) {
+      setLocStatus('位置不可用', true);
+      return;
+    }
+    try {
+      navigator.geolocation.getCurrentPosition(
+        function (position) {
+          try {
+            currentLocation = matchCity(position.coords.latitude, position.coords.longitude);
+          } catch (err) {
+            currentLocation = null;
+          }
+          if (currentLocation) {
+            setLocStatus('已定位：' + currentLocation, false);
+          } else {
+            setLocStatus('位置不可用', true);
+          }
+        },
+        function () {
+          currentLocation = null;
+          setLocStatus('位置不可用', true);
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
+      );
+    } catch (err) {
+      currentLocation = null;
+      setLocStatus('位置不可用', true);
+    }
+  }
+
   /* ========== 渲染层 ========== */
 
   /**
@@ -333,23 +663,76 @@
   }
 
   /**
-   * 创建单条动态的 DOM 节点。
-   * 使用 textContent 写入用户文本，避免 HTML 注入。
+   * 通过精灵图引用生成头像节点（索引越界时回落到第 1 款）。
+   */
+  function createAvatarSvg(index) {
+    var i = normalizeAvatar(index);
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 40 40');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+
+    var use = document.createElementNS(SVG_NS, 'use');
+    use.setAttribute('href', '#av-' + i);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  // 元信息之间的分隔符「·」
+  function createSep() {
+    var sep = document.createElement('span');
+    sep.className = 'feed-sep';
+    sep.textContent = '·';
+    return sep;
+  }
+
+  /**
+   * 创建单条动态的 DOM 节点：左侧头像 + 右侧（昵称 · 时间 · 地点 + 正文）。
+   * 所有用户文本均用 textContent 写入，天然避免 HTML 注入。
    */
   function createPostNode(post) {
     var li = document.createElement('li');
     li.className = 'feed-item';
 
-    var time = document.createElement('p');
+    var avatar = document.createElement('span');
+    avatar.className = 'feed-avatar';
+    avatar.appendChild(createAvatarSvg(post.avatar));
+
+    var main = document.createElement('div');
+    main.className = 'feed-main';
+
+    var meta = document.createElement('p');
+    meta.className = 'feed-meta';
+
+    var author = document.createElement('span');
+    author.className = 'feed-author';
+    author.textContent = post.author;
+
+    var time = document.createElement('span');
     time.className = 'feed-time';
     time.textContent = formatTime(post.createdAt);
+
+    meta.appendChild(author);
+    meta.appendChild(createSep());
+    meta.appendChild(time);
+
+    // 没有地点时不渲染该节点
+    if (post.location) {
+      var loc = document.createElement('span');
+      loc.className = 'feed-loc';
+      loc.textContent = post.location;
+      meta.appendChild(createSep());
+      meta.appendChild(loc);
+    }
 
     var body = document.createElement('p');
     body.className = 'feed-content';
     body.textContent = post.content;
 
-    li.appendChild(time);
-    li.appendChild(body);
+    main.appendChild(meta);
+    main.appendChild(body);
+    li.appendChild(avatar);
+    li.appendChild(main);
     return li;
   }
 
@@ -398,9 +781,9 @@
   }
 
   /**
-   * 发布一条动态：校验 → 构造对象 → 持久化 → 重绘 → 清空输入框
+   * 发布一条动态：校验 → 构造对象（含昵称/头像/地点）→ 持久化 → 重绘
    */
-  function addPost(content) {
+  function addPost(content, author, avatarIndex) {
     var text = content.trim();
     if (!text) {
       showHint('内容不能为空', true);
@@ -410,7 +793,10 @@
     var post = {
       id: Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
       content: text,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      author: normalizeAuthor(author),
+      avatar: normalizeAvatar(avatarIndex),
+      location: currentLocation
     };
 
     posts.push(post);
@@ -430,6 +816,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     var form = document.getElementById('composer');
     var input = document.getElementById('postInput');
+    var authorInput = document.getElementById('postAuthor');
     var noticeEl = document.getElementById('notice');
 
     var loaded = loadPosts();
@@ -437,12 +824,20 @@
     if (!loaded.ok && noticeEl) noticeEl.classList.add('is-visible');
 
     renderPosts();
+    initLocation();   // 定位异步进行，不阻塞首屏
 
     if (!form || !input) return;
 
     form.addEventListener('submit', function (event) {
       event.preventDefault();
-      addPost(input.value);
+
+      // 读取当前选中的头像索引
+      var checked = form.querySelector('input[name="avatar"]:checked');
+      var avatarIndex = checked ? parseInt(checked.value, 10) : 0;
+
+      addPost(input.value, authorInput ? authorInput.value : '', avatarIndex);
+
+      // 只清空正文，昵称与头像选择保留，便于连续发布
       input.value = '';
       input.style.height = '';
       input.focus();
