@@ -10,6 +10,9 @@ const POST: Post = {
   author: '林一',
   avatar: 2,
   location: '上海',
+  likes: 0,
+  liked: false,
+  favorited: false,
 }
 
 function mountItem(post: Post = POST) {

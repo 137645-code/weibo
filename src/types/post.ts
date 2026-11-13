@@ -9,6 +9,12 @@ export interface Post {
   author: string
   avatar: number
   location: string | null
+  /** 点赞总数 */
+  likes: number
+  /** 当前访客是否已点赞（服务端无鉴权，视为单一访客） */
+  liked: boolean
+  /** 当前访客是否已收藏 */
+  favorited: boolean
 }
 
 /** 发布动态时的原始输入，允许缺省与脏值，由归一化函数兜底 */
@@ -31,10 +37,23 @@ export type AddPostFailureReason = 'empty' | 'too-long' | 'unavailable'
 /** 发布结果 */
 export type AddPostResult = { ok: true; post: Post } | { ok: false; reason: AddPostFailureReason }
 
+/** 可以切换的互动类型：点赞与收藏 */
+export type PostReaction = 'like' | 'favorite'
+
+/** 互动失败原因：not-found 表示目标动态已被删除 */
+export type SetReactionFailureReason = 'unavailable' | 'not-found'
+
+/** 互动结果；ok 时返回服务端的最新动态（含最新计数） */
+export type SetReactionResult =
+  | { ok: true; post: Post }
+  | { ok: false; reason: SetReactionFailureReason }
+
 /** 远端数据源契约：失败不抛错，用返回值表达 */
 export interface PostApi {
   load(): Promise<LoadResult>
   create(draft: PostDraft): Promise<AddPostResult>
+  /** 设置互动状态（幂等）：active 为目标状态而非取反 */
+  setReaction(id: string, kind: PostReaction, active: boolean): Promise<SetReactionResult>
 }
 
 /** 定位状态：idle 未开始、locating 请求中、ready 命中城市、unavailable 不可用 */

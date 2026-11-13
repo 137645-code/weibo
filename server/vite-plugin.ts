@@ -1,5 +1,6 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { getRequestListener } from '@hono/node-server'
-import type { Connect, IncomingMessage, Plugin, ServerResponse } from 'vite'
+import type { Connect, Plugin } from 'vite'
 import { createApp } from './app'
 import { createPostStore } from './store'
 

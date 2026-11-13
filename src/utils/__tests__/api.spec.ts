@@ -12,6 +12,9 @@ function makePost(overrides: Partial<Post> = {}): Post {
     author: '林一',
     avatar: 2,
     location: '上海',
+    likes: 0,
+    liked: false,
+    favorited: false,
     ...overrides,
   }
 }
@@ -214,5 +217,105 @@ describe('createPostApi - 超时与路径', () => {
     await createPostApi({ baseUrl: '/api/', fetchImpl }).load()
 
     expect(fetchImpl.mock.calls[0][0]).toBe('/api/posts')
+  })
+})
+
+describe('createPostApi - 互动字段解析', () => {
+  it('旧数据缺少互动字段时回落为未点赞、未收藏', async () => {
+    const legacy = {
+      id: 'old',
+      content: '旧动态',
+      createdAt: BASE_TIME,
+      author: '林一',
+      avatar: 2,
+      location: null,
+    }
+    const fetchImpl = createFetchStub(jsonResponse({ posts: [legacy], total: 1 }))
+
+    const result = await createPostApi({ fetchImpl }).load()
+
+    expect(result.list[0]).toMatchObject({ likes: 0, liked: false, favorited: false })
+  })
+
+  it('脏计数与字符串标记被收敛，不会污染界面', async () => {
+    const dirty = makePost({ likes: -3, liked: 'true' as unknown as boolean })
+    const fetchImpl = createFetchStub(
+      jsonResponse({ posts: [{ ...dirty, likes: 7.8 }], total: 1 }),
+    )
+
+    const result = await createPostApi({ fetchImpl }).load()
+
+    expect(result.list[0]).toMatchObject({ likes: 7, liked: false })
+  })
+})
+
+describe('createPostApi - 点赞与收藏', () => {
+  it('点赞使用 PUT，取消点赞使用 DELETE', async () => {
+    const post = makePost({ likes: 1, liked: true })
+    // 同一个 Response 只能读一次，两次请求各取一个新响应
+    const fetchImpl = createFetchStub(() => Promise.resolve(jsonResponse({ post })))
+    const api = createPostApi({ fetchImpl })
+
+    await expect(api.setReaction('p1', 'like', true)).resolves.toEqual({ ok: true, post })
+    await expect(api.setReaction('p1', 'like', false)).resolves.toEqual({ ok: true, post })
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/posts/p1/like')
+    expect(fetchImpl.mock.calls[0][1]?.method).toBe('PUT')
+    expect(fetchImpl.mock.calls[1][0]).toBe('/api/posts/p1/like')
+    expect(fetchImpl.mock.calls[1][1]?.method).toBe('DELETE')
+  })
+
+  it('收藏走 /favorite 路径', async () => {
+    const post = makePost({ favorited: true })
+    const fetchImpl = createFetchStub(jsonResponse({ post }))
+
+    await createPostApi({ fetchImpl }).setReaction('p1', 'favorite', true)
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/posts/p1/favorite')
+    expect(fetchImpl.mock.calls[0][1]?.method).toBe('PUT')
+  })
+
+  it('id 中的特殊字符会被转义', async () => {
+    const fetchImpl = createFetchStub(jsonResponse({ post: makePost() }))
+
+    await createPostApi({ fetchImpl }).setReaction('a/b c', 'like', true)
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/posts/a%2Fb%20c/like')
+  })
+
+  it('404 映射为 not-found，其余失败一律 unavailable', async () => {
+    const notFound = createPostApi({
+      fetchImpl: createFetchStub(
+        jsonResponse({ error: { code: 'NOT_FOUND', message: 'post not found' } }, 404),
+      ),
+    })
+    await expect(notFound.setReaction('x', 'like', true)).resolves.toEqual({
+      ok: false,
+      reason: 'not-found',
+    })
+
+    const broken = createPostApi({
+      fetchImpl: createFetchStub(jsonResponse({ error: { code: 'INTERNAL_ERROR' } }, 500)),
+    })
+    await expect(broken.setReaction('x', 'like', true)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+    })
+  })
+
+  it('网络异常与响应缺字段都不抛出', async () => {
+    const offline = createPostApi({
+      fetchImpl: createFetchStub(() => Promise.reject(new Error('offline'))),
+    })
+    await expect(offline.setReaction('x', 'favorite', true)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+    })
+
+    const empty = createPostApi({ fetchImpl: createFetchStub(jsonResponse({}, 200)) })
+    await expect(empty.setReaction('x', 'like', true)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+    })
   })
 })

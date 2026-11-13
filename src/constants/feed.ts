@@ -39,3 +39,25 @@ export const AVATAR_INDEXES: number[] = Array.from(
   { length: AVATAR_COUNT },
   (_unused, index) => index,
 )
+
+/** 点赞按钮：未点赞 / 已点赞的可访问名称 */
+export const LIKE_LABEL = '点赞'
+export const UNLIKE_LABEL = '取消点赞'
+
+/** 收藏按钮：未收藏 / 已收藏的可访问名称 */
+export const FAVORITE_LABEL = '收藏'
+export const UNFAVORITE_LABEL = '取消收藏'
+
+/** 收藏按钮上的文字 */
+export const FAVORITE_TEXT = '收藏'
+export const FAVORITED_TEXT = '已收藏'
+
+/** 互动请求失败提示文案 */
+export const REACTION_FAILED_HINT = '操作失败，请稍后再试'
+
+/** 信息流筛选：全部 / 仅收藏 */
+export const FILTER_ALL_TEXT = '全部'
+export const FILTER_FAVORITE_TEXT = '我的收藏'
+
+/** 收藏筛选下没有内容时的占位文案 */
+export const EMPTY_FAVORITE_TEXT = '还没有收藏的动态，点一下星标就能收藏'

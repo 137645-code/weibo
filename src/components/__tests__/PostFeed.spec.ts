@@ -14,6 +14,9 @@ function makePost(overrides: Partial<Post>): Post {
     author: '匿名用户',
     avatar: 0,
     location: null,
+    likes: 0,
+    liked: false,
+    favorited: false,
     ...overrides,
   }
 }

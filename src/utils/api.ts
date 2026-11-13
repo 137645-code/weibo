@@ -5,8 +5,16 @@ import type {
   Post,
   PostApi,
   PostDraft,
+  PostReaction,
+  SetReactionResult,
 } from '../types/post'
-import { normalizeAuthor, normalizeAvatar, normalizeLocation } from './normalize'
+import {
+  normalizeAuthor,
+  normalizeAvatar,
+  normalizeCount,
+  normalizeFlag,
+  normalizeLocation,
+} from './normalize'
 
 const DEFAULT_BASE_URL = '/api'
 
@@ -48,6 +56,10 @@ function parsePost(item: unknown): Post | null {
     author: normalizeAuthor(raw.author),
     avatar: normalizeAvatar(raw.avatar),
     location: normalizeLocation(raw.location),
+    // 旧数据可能没有互动字段，缺省即视为未点赞、未收藏
+    likes: normalizeCount(raw.likes),
+    liked: normalizeFlag(raw.liked),
+    favorited: normalizeFlag(raw.favorited),
   }
 }
 
@@ -106,6 +118,32 @@ export function createPostApi(options: PostApiOptions = {}): PostApi {
         return { list, ok: true }
       } catch {
         return { list: [], ok: false }
+      }
+    },
+
+    async setReaction(
+      id: string,
+      kind: PostReaction,
+      active: boolean,
+    ): Promise<SetReactionResult> {
+      // 幂等语义：active 是目标状态，PUT 表示打开、DELETE 表示关闭
+      const path = `/posts/${encodeURIComponent(id)}/${kind === 'like' ? 'like' : 'favorite'}`
+
+      try {
+        const response = await request(path, {
+          method: active ? 'PUT' : 'DELETE',
+          headers: { Accept: 'application/json' },
+        })
+
+        if (response.status === 404) return { ok: false, reason: 'not-found' }
+        if (!response.ok) return { ok: false, reason: 'unavailable' }
+
+        const body = (await response.json()) as { post?: unknown }
+        const post = parsePost(body?.post)
+
+        return post ? { ok: true, post } : { ok: false, reason: 'unavailable' }
+      } catch {
+        return { ok: false, reason: 'unavailable' }
       }
     },
 

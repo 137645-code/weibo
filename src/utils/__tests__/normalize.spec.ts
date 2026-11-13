@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_AUTHOR } from '@/constants/feed'
-import { normalizeAuthor, normalizeAvatar, normalizeLocation } from '../normalize'
+import { normalizeAuthor, normalizeAvatar, normalizeCount, normalizeFlag, normalizeLocation } from '../normalize'
 
 describe('normalizeAuthor', () => {
   it('去除首尾空白', () => {
@@ -71,5 +71,33 @@ describe('normalizeLocation', () => {
 
   it('超过 20 字时截断', () => {
     expect(normalizeLocation('城'.repeat(30))).toHaveLength(20)
+  })
+})
+
+describe('normalizeCount', () => {
+  it('非负数字向下取整', () => {
+    expect(normalizeCount(0)).toBe(0)
+    expect(normalizeCount(12)).toBe(12)
+    expect(normalizeCount(3.9)).toBe(3)
+  })
+
+  it('负数与非法值回落为 0', () => {
+    expect(normalizeCount(-1)).toBe(0)
+    expect(normalizeCount(Number.NaN)).toBe(0)
+    expect(normalizeCount(Number.POSITIVE_INFINITY)).toBe(0)
+    expect(normalizeCount('abc')).toBe(0)
+    expect(normalizeCount(null)).toBe(0)
+    expect(normalizeCount(undefined)).toBe(0)
+  })
+})
+
+describe('normalizeFlag', () => {
+  it('只认真正的 true', () => {
+    expect(normalizeFlag(true)).toBe(true)
+    expect(normalizeFlag(false)).toBe(false)
+    expect(normalizeFlag('true')).toBe(false)
+    expect(normalizeFlag(1)).toBe(false)
+    expect(normalizeFlag(null)).toBe(false)
+    expect(normalizeFlag(undefined)).toBe(false)
   })
 })

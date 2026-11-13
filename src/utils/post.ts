@@ -31,5 +31,9 @@ export function createPost(draft: PostDraft, deps: CreatePostDeps = {}): Post | 
     author: normalizeAuthor(draft.author),
     avatar: normalizeAvatar(draft.avatar),
     location: normalizeLocation(draft.location),
+    // 新动态的互动状态由服务端单独维护，构造时始终从零开始
+    likes: 0,
+    liked: false,
+    favorited: false,
   }
 }

@@ -34,3 +34,20 @@ export function normalizeLocation(value: unknown): string | null {
   const text = value.trim()
   return text ? text.slice(0, MAX_LOCATION_LENGTH) : null
 }
+
+/**
+ * 计数值归一化：负数、非整数、非数字一律回落为 0，避免脏数据渲染出 NaN。
+ */
+export function normalizeCount(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0
+  return Math.floor(parsed)
+}
+
+/**
+ * 布尔标记归一化：只认真正的 true，其余（含 "true" 字符串）统一为 false。
+ */
+export function normalizeFlag(value: unknown): boolean {
+  return value === true
+}

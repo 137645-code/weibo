@@ -38,6 +38,14 @@ describe('createPost', () => {
     expect(post?.location).toBeNull()
   })
 
+  it('新动态从零开始：未点赞、未收藏、计数为 0', () => {
+    const post = createPost({ content: '你好' }, deps())
+
+    expect(post?.likes).toBe(0)
+    expect(post?.liked).toBe(false)
+    expect(post?.favorited).toBe(false)
+  })
+
   it('id 由时间戳 36 进制与随机串拼接', () => {
     const post = createPost({ content: '你好' }, deps())
 
