@@ -54,7 +54,8 @@ export function createPostStore(deps: PostStoreDeps = {}): PostStore {
     const index = items.findIndex((post) => post.id === id)
     if (index === -1) return undefined
 
-    const next = updater(items[index])
+    // 传副本：即使 updater 原地改字段也污染不到内部数据
+    const next = updater(clone(items[index]))
     items = items.map((item, current) => (current === index ? next : item))
 
     return clone(next)

@@ -169,6 +169,17 @@ describe('createPostStore - 点赞与收藏', () => {
     expect(store.setLike('p1', false)?.likes).toBe(0)
   })
 
+  it('取消点赞后重新点赞，计数回到原值', () => {
+    const store = createPostStore()
+    store.seed([makePost({ likes: 7, liked: true })])
+
+    store.setLike('p1', false)
+    expect(store.find('p1')).toMatchObject({ liked: false, likes: 6 })
+
+    store.setLike('p1', true)
+    expect(store.find('p1')).toMatchObject({ liked: true, likes: 7 })
+  })
+
   it('收藏只切换状态，不影响点赞', () => {
     const store = createPostStore()
     store.seed([makePost({ likes: 5, liked: true })])
@@ -178,6 +189,17 @@ describe('createPostStore - 点赞与收藏', () => {
 
     const canceled = store.setFavorite('p1', false)
     expect(canceled).toMatchObject({ favorited: false, liked: true, likes: 5 })
+  })
+
+  it('重复收藏与重复取消都是幂等的', () => {
+    const store = createPostStore()
+    store.seed([makePost()])
+
+    store.setFavorite('p1', true)
+    expect(store.setFavorite('p1', true)).toMatchObject({ favorited: true })
+
+    store.setFavorite('p1', false)
+    expect(store.setFavorite('p1', false)).toMatchObject({ favorited: false })
   })
 
   it('id 不存在时返回 undefined 且不写入数据', () => {

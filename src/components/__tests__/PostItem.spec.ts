@@ -73,7 +73,7 @@ describe('PostItem - 互动操作栏', () => {
     const favorite = wrapper.find('.feed-action-favorite')
 
     expect(like.attributes('aria-pressed')).toBe('false')
-    expect(like.attributes('aria-label')).toBe(LIKE_LABEL)
+    expect(like.attributes('aria-label')).toBe(`${LIKE_LABEL}（0 个赞）`)
     expect(wrapper.find('.feed-action-count').text()).toBe('0')
     expect(favorite.attributes('aria-pressed')).toBe('false')
     expect(favorite.attributes('aria-label')).toBe(FAVORITE_LABEL)
@@ -86,7 +86,8 @@ describe('PostItem - 互动操作栏', () => {
 
     expect(like.classes()).toContain('is-active')
     expect(like.attributes('aria-pressed')).toBe('true')
-    expect(like.attributes('aria-label')).toBe(UNLIKE_LABEL)
+    // 屏幕上只有数字可见，可访问名称必须把计数念出来
+    expect(like.attributes('aria-label')).toBe(`${UNLIKE_LABEL}（12 个赞）`)
     expect(wrapper.find('.feed-action-count').text()).toBe('12')
   })
 
@@ -96,7 +97,9 @@ describe('PostItem - 互动操作栏', () => {
 
     expect(favorite.classes()).toContain('is-active')
     expect(favorite.attributes('aria-pressed')).toBe('true')
-    expect(favorite.attributes('aria-label')).toBe(UNFAVORITE_LABEL)
+    // 名称包含可见文字「已收藏」，语音控制念出来也能命中
+    expect(favorite.attributes('aria-label')).toContain(FAVORITED_TEXT)
+    expect(favorite.attributes('aria-label')).toContain(UNFAVORITE_LABEL)
     expect(wrapper.find('.feed-action-text').text()).toBe(FAVORITED_TEXT)
   })
 
@@ -116,7 +119,7 @@ describe('PostItem - 互动操作栏', () => {
     })
 
     const like = wrapper.find('.feed-action-like')
-    expect(like.attributes('disabled')).toBeDefined()
+    expect(like.attributes('disabled')).toBe('')
     expect(like.attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('.feed-action-favorite').attributes('disabled')).toBeUndefined()
   })

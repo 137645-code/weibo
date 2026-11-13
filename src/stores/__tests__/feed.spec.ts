@@ -453,6 +453,36 @@ describe('useFeedStore - 点赞与收藏', () => {
     release?.(jsonResponse({ post: makePost({ liked: true, likes: 3 }) }))
     await pending
   })
+
+  it('慢响应在点赞完成之后才到达时，不会把状态刷回旧值', async () => {
+    seedPosts([makePost({ likes: 2 })])
+
+    let release: (() => void) | undefined
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        // 请求已发出，但响应压到点赞完成之后再交付
+        return new Promise<Response>((resolve) => {
+          release = async () => resolve(await testFetch(input, init))
+        })
+      }
+      return Promise.resolve(jsonResponse({ post: makePost({ liked: true, likes: 3 }) }))
+    })
+
+    const store = useFeedStore()
+    // 本地已有数据（等价于首屏已经渲染过），随后发起一次慢加载
+    store.posts = [makePost({ likes: 2 })]
+    const loading = store.init()
+
+    const toggled = await store.toggleReaction('p1', 'like')
+    expect(toggled.ok).toBe(true)
+    expect(store.posts[0]).toMatchObject({ liked: true, likes: 3 })
+
+    release?.()
+    await loading
+
+    // 快照拍摄于点赞之前，晚到也不允许回滚已生效的互动
+    expect(store.posts[0]).toMatchObject({ liked: true, likes: 3 })
+  })
 })
 
 describe('useFeedStore - 收藏筛选', () => {

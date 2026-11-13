@@ -40,6 +40,10 @@ export const useFeedStore = defineStore('feed', () => {
   let loadSeq = 0
   /** 计数而非布尔，并发发布时不会提前解除禁用 */
   let pendingSubmits = 0
+  /** 互动变更的自增序号：用来判断某次互动是否发生在某次加载之后 */
+  let reactionEpoch = 0
+  /** 每个 `${id}:${kind}` 最近一次互动的序号，完成后仍保留 */
+  const reactionVersions = new Map<string, number>()
 
   /** 按发布时间倒序，派生而非原地排序，避免破坏原始顺序 */
   const sortedPosts = computed(() =>
@@ -75,11 +79,15 @@ export const useFeedStore = defineStore('feed', () => {
 
   /**
    * 首屏从服务端拉取数据。失败时标记服务不可用，界面据此展示提示条。
-   * 若加载期间已有新动态发布成功（服务端快照里还没有），按 id 合并保留；
-   * 正在切换的互动状态也用本地意图覆盖快照，避免「点了又被刷回去」。
+   * 若加载期间已有新动态发布成功（服务端快照里还没有），按 id 合并保留。
+   *
+   * 互动字段额外按「快照发起时刻」裁决：请求发出之后才发生的互动
+   * （无论已结束还是在途）都用本地值覆盖快照，否则慢响应会把
+   * 刚点好的点赞/收藏刷回旧状态。
    */
   async function init(): Promise<void> {
     const seq = ++loadSeq
+    const epochAtStart = reactionEpoch
     const { list, ok } = await api.load()
 
     if (seq !== loadSeq) return
@@ -90,18 +98,24 @@ export const useFeedStore = defineStore('feed', () => {
 
     const known = new Set(list.map((post) => post.id))
     const localOnly = posts.value.filter((post) => !known.has(post.id))
+    const changedAfterLoadStart = (id: string, kind: PostReaction): boolean =>
+      (reactionVersions.get(reactionKey(id, kind)) ?? 0) > epochAtStart
+
     const merged = list.map((post) => {
       const local = posts.value.find((item) => item.id === post.id)
       if (!local) return post
 
-      const likePending = isReactionPending(post.id, 'like')
-      const favoritePending = isReactionPending(post.id, 'favorite')
-      if (!likePending && !favoritePending) return post
+      // 在途的互动无论何时发起都不能被快照覆盖；已完成的需要按发起时刻裁决
+      const likeLocal =
+        isReactionPending(post.id, 'like') || changedAfterLoadStart(post.id, 'like')
+      const favoriteLocal =
+        isReactionPending(post.id, 'favorite') || changedAfterLoadStart(post.id, 'favorite')
+      if (!likeLocal && !favoriteLocal) return post
 
       return {
         ...post,
-        ...(likePending ? { liked: local.liked, likes: local.likes } : null),
-        ...(favoritePending ? { favorited: local.favorited } : null),
+        ...(likeLocal ? { liked: local.liked, likes: local.likes } : null),
+        ...(favoriteLocal ? { favorited: local.favorited } : null),
       }
     })
 
@@ -158,6 +172,8 @@ export const useFeedStore = defineStore('feed', () => {
         : { favorited: active },
     )
 
+    // 记下互动发生时刻：此后到达的旧快照不允许覆盖这一组字段
+    reactionVersions.set(key, ++reactionEpoch)
     pendingReactions.value = [...pendingReactions.value, key]
     reactionFailed.value = false
 

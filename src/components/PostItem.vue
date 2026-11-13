@@ -30,9 +30,15 @@ const time = computed(() => formatTime(props.post.createdAt))
 const src = computed(() => avatarSrc(props.post.avatar))
 
 // 可访问名称随状态变化；视觉上的激活态交给 CSS
-const likeLabel = computed(() => (props.post.liked ? UNLIKE_LABEL : LIKE_LABEL))
-const favoriteLabel = computed(() => (props.post.favorited ? UNFAVORITE_LABEL : FAVORITE_LABEL))
+// 点赞按钮只有数字可见，名称里补上计数，屏幕阅读器才读得到「几个赞」
+const likeLabel = computed(
+  () => `${props.post.liked ? UNLIKE_LABEL : LIKE_LABEL}（${props.post.likes} 个赞）`,
+)
 const favoriteText = computed(() => (props.post.favorited ? FAVORITED_TEXT : FAVORITE_TEXT))
+// 名称包含可见文字，避免「念可见文字却点不到」的语音控制问题
+const favoriteLabel = computed(() =>
+  props.post.favorited ? `${FAVORITED_TEXT}，${UNFAVORITE_LABEL}` : FAVORITE_LABEL,
+)
 </script>
 
 <template>

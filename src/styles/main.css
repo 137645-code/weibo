@@ -483,12 +483,12 @@ body {
   transition: color .15s ease, background-color .15s ease, transform .15s ease;
 }
 
-.feed-action:hover {
+.feed-action:not(:disabled):hover {
   color: var(--color-ink-soft);
   background: #F4F6F8;
 }
 
-.feed-action:active { transform: scale(.96); }
+.feed-action:not(:disabled):active { transform: scale(.96); }
 
 .feed-action:focus-visible {
   outline: 2px solid var(--color-navy);
