@@ -458,6 +458,133 @@ body {
   word-break: break-word;
 }
 
+/* ---------- 互动操作栏：点赞 / 收藏 ---------- */
+.feed-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0 -8px;
+}
+
+.feed-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-ink-mute);
+  font-family: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color .15s ease, background-color .15s ease, transform .15s ease;
+}
+
+.feed-action:hover {
+  color: var(--color-ink-soft);
+  background: #F4F6F8;
+}
+
+.feed-action:active { transform: scale(.96); }
+
+.feed-action:focus-visible {
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
+}
+
+/* 请求在途：禁用但保留激活态配色，避免视觉状态闪烁 */
+.feed-action:disabled {
+  cursor: progress;
+  opacity: .55;
+}
+
+.feed-action-icon {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 已点赞：心形填充 + 玫红 */
+.feed-action-like.is-active {
+  color: #C2475F;
+  background: rgba(194, 71, 95, .1);
+}
+
+.feed-action-like.is-active .feed-action-icon { fill: currentColor; }
+
+/* 已收藏：星形填充 + 琥珀 */
+.feed-action-favorite.is-active {
+  color: #A9761C;
+  background: rgba(169, 118, 28, .12);
+}
+
+.feed-action-favorite.is-active .feed-action-icon { fill: currentColor; }
+
+.feed-action-count { min-width: 1ch; }
+
+/* ---------- 信息流筛选：胶囊分段控件 ---------- */
+.feed-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.feed-filters {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 4px 14px rgba(23, 37, 47, .04);
+}
+
+.filter-tab {
+  min-height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-ink-mute);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+
+.filter-tab:hover { color: var(--color-ink); }
+
+.filter-tab.is-active {
+  background: var(--color-navy);
+  color: #FFFFFF;
+}
+
+.filter-tab:focus-visible {
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
+}
+
+/* 互动失败轻提示：比服务不可用提示更淡 */
+.feed-alert {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: #FDF0F2;
+  color: #8E2A3C;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* ---------- 空状态：圆角白卡 ---------- */
 .empty {
   margin: 0;
@@ -492,6 +619,9 @@ body {
   .feed-avatar { width: 38px; height: 38px; border-radius: 10px; }
   .feed-author { font-size: 14px; }
   .feed-content { font-size: 15px; }
+  .feed-actions { margin-top: 10px; margin-left: -6px; gap: 2px; }
+  .feed-action { padding: 0 8px; font-size: 12.5px; }
+  .feed-action-icon { width: 16px; height: 16px; }
 }
 
 /* 尊重系统减少动效偏好 */
