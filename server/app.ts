@@ -1,7 +1,7 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { MAX_CONTENT_LENGTH } from '../src/constants/feed'
-import type { PostDraft } from '../src/types/post'
+import type { Post, PostDraft } from '../src/types/post'
 import { createPostStore, type PostStore } from './store'
 
 /** 请求体上限：正文上限 500 字，留足昵称、地点与 JSON 结构开销 */
@@ -98,11 +98,35 @@ export function createApp(options: CreateAppOptions = {}): Hono {
     },
   )
 
+  /**
+   * 互动接口：active 是目标状态而不是取反，
+   * 因此重复 PUT / DELETE 都幂等，网络重试不会把计数刷乱。
+   */
+  const reactionHandler = (apply: (id: string) => Post | undefined) => (c: Context) => {
+    const post = apply(c.req.param('id'))
+    if (!post) return c.json(errorBody('NOT_FOUND', 'post not found'), 404)
+
+    return c.json({ post })
+  }
+
+  app.put('/api/posts/:id/like', reactionHandler((id) => store.setLike(id, true)))
+  app.delete('/api/posts/:id/like', reactionHandler((id) => store.setLike(id, false)))
+  app.put('/api/posts/:id/favorite', reactionHandler((id) => store.setFavorite(id, true)))
+  app.delete('/api/posts/:id/favorite', reactionHandler((id) => store.setFavorite(id, false)))
+
   // 路径存在但方法不支持时回 405，而不是混进 404
   app.all('/api/posts', (c) => {
     c.header('Allow', 'GET, POST')
     return c.json(errorBody('METHOD_NOT_ALLOWED', 'method not allowed'), 405)
   })
+
+  const subResourceNotAllowed = (allow: string) => (c: Context) => {
+    c.header('Allow', allow)
+    return c.json(errorBody('METHOD_NOT_ALLOWED', 'method not allowed'), 405)
+  }
+
+  app.all('/api/posts/:id/like', subResourceNotAllowed('PUT, DELETE'))
+  app.all('/api/posts/:id/favorite', subResourceNotAllowed('PUT, DELETE'))
 
   app.all('/api/posts/:id', (c) => {
     c.header('Allow', 'GET')

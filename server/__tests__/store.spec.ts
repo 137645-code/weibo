@@ -132,3 +132,100 @@ describe('createPostStore - 写入', () => {
     expect(store.count()).toBe(1)
   })
 })
+
+describe('createPostStore - 点赞与收藏', () => {
+  it('点赞后计数加一并标记已点赞', () => {
+    const store = createPostStore()
+    store.seed([makePost({ likes: 2 })])
+
+    const updated = store.setLike('p1', true)
+
+    expect(updated).toMatchObject({ liked: true, likes: 3 })
+    expect(store.find('p1')).toMatchObject({ liked: true, likes: 3 })
+  })
+
+  it('重复点赞幂等，计数不会重复增加', () => {
+    const store = createPostStore()
+    store.seed([makePost({ likes: 2 })])
+
+    store.setLike('p1', true)
+    store.setLike('p1', true)
+
+    expect(store.find('p1')?.likes).toBe(3)
+  })
+
+  it('取消点赞计数减一，重复取消不会变成负数', () => {
+    const store = createPostStore()
+    store.seed([makePost({ liked: true, likes: 1 })])
+
+    expect(store.setLike('p1', false)).toMatchObject({ liked: false, likes: 0 })
+    expect(store.setLike('p1', false)).toMatchObject({ liked: false, likes: 0 })
+  })
+
+  it('点赞为 true 但计数为 0 的脏数据取消时不会变负', () => {
+    const store = createPostStore()
+    store.seed([makePost({ liked: true, likes: 0 })])
+
+    expect(store.setLike('p1', false)?.likes).toBe(0)
+  })
+
+  it('收藏只切换状态，不影响点赞', () => {
+    const store = createPostStore()
+    store.seed([makePost({ likes: 5, liked: true })])
+
+    const favorited = store.setFavorite('p1', true)
+    expect(favorited).toMatchObject({ favorited: true, liked: true, likes: 5 })
+
+    const canceled = store.setFavorite('p1', false)
+    expect(canceled).toMatchObject({ favorited: false, liked: true, likes: 5 })
+  })
+
+  it('id 不存在时返回 undefined 且不写入数据', () => {
+    const store = createPostStore()
+    store.seed([makePost({ id: 'p1' })])
+
+    expect(store.setLike('missing', true)).toBeUndefined()
+    expect(store.setFavorite('missing', true)).toBeUndefined()
+    expect(store.count()).toBe(1)
+  })
+
+  it('返回的是副本，外部修改不会回流到存储', () => {
+    const store = createPostStore()
+    store.seed([makePost()])
+
+    const updated = store.setLike('p1', true)
+    if (updated) updated.likes = 999
+
+    expect(store.find('p1')?.likes).toBe(1)
+  })
+
+  it('互动变更不改变倒序顺序', () => {
+    const store = createPostStore()
+    store.seed([
+      makePost({ id: 'old', createdAt: 1 }),
+      makePost({ id: 'new', createdAt: 3 }),
+      makePost({ id: 'mid', createdAt: 2 }),
+    ])
+
+    store.setLike('old', true)
+    store.setFavorite('mid', true)
+
+    expect(store.list().map((post) => post.id)).toEqual(['new', 'mid', 'old'])
+  })
+
+  it('seed 归一化缺失与脏的互动字段', () => {
+    const store = createPostStore()
+    const dirty = {
+      ...makePost(),
+      likes: -5,
+      liked: 'true',
+      favorited: 1,
+    } as unknown as Post
+
+    store.seed([dirty, makePost({ id: 'p2', liked: true, likes: 0 })])
+
+    expect(store.find('p1')).toMatchObject({ likes: 0, liked: false, favorited: false })
+    // 已点赞但计数为 0 时至少显示 1，避免「红心 + 0」的矛盾展示
+    expect(store.find('p2')).toMatchObject({ liked: true, likes: 1 })
+  })
+})

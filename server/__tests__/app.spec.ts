@@ -253,6 +253,111 @@ describe('协议细节', () => {
   })
 })
 
+describe('PUT / DELETE /api/posts/:id/like', () => {
+  it('点赞后返回最新动态并在服务端可见', async () => {
+    const { request, store } = setup([makePost({ likes: 4 })])
+
+    const res = await request('/api/posts/p1/like', { method: 'PUT' })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { post: Post }
+    expect(body.post).toMatchObject({ id: 'p1', liked: true, likes: 5 })
+    expect(store.find('p1')).toMatchObject({ liked: true, likes: 5 })
+  })
+
+  it('重复 PUT 幂等，计数不重复增加', async () => {
+    const { request } = setup([makePost()])
+
+    await request('/api/posts/p1/like', { method: 'PUT' })
+    const res = await request('/api/posts/p1/like', { method: 'PUT' })
+
+    expect(((await res.json()) as { post: Post }).post.likes).toBe(1)
+  })
+
+  it('DELETE 取消点赞，重复取消不会变负', async () => {
+    const { request } = setup([makePost({ liked: true, likes: 1 })])
+
+    const first = await request('/api/posts/p1/like', { method: 'DELETE' })
+    expect(first.status).toBe(200)
+    expect(((await first.json()) as { post: Post }).post).toMatchObject({ liked: false, likes: 0 })
+
+    const second = await request('/api/posts/p1/like', { method: 'DELETE' })
+    expect(((await second.json()) as { post: Post }).post.likes).toBe(0)
+  })
+
+  it('id 不存在时返回 404 NOT_FOUND', async () => {
+    const { request } = setup()
+
+    const res = await request('/api/posts/missing/like', { method: 'PUT' })
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({
+      error: { code: 'NOT_FOUND', message: 'post not found' },
+    })
+  })
+
+  it('不支持的方法返回 405 并声明 Allow', async () => {
+    const { request } = setup([makePost()])
+
+    const res = await request('/api/posts/p1/like', { method: 'GET' })
+
+    expect(res.status).toBe(405)
+    expect(res.headers.get('allow')).toBe('PUT, DELETE')
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      'METHOD_NOT_ALLOWED',
+    )
+  })
+})
+
+describe('PUT / DELETE /api/posts/:id/favorite', () => {
+  it('收藏与取消收藏互不影响点赞', async () => {
+    const { request, store } = setup([makePost({ liked: true, likes: 1 })])
+
+    const added = await request('/api/posts/p1/favorite', { method: 'PUT' })
+    expect(((await added.json()) as { post: Post }).post).toMatchObject({
+      favorited: true,
+      liked: true,
+      likes: 1,
+    })
+    expect(store.find('p1')?.favorited).toBe(true)
+
+    const removed = await request('/api/posts/p1/favorite', { method: 'DELETE' })
+    expect(((await removed.json()) as { post: Post }).post).toMatchObject({
+      favorited: false,
+      liked: true,
+    })
+  })
+
+  it('id 不存在时返回 404', async () => {
+    const { request } = setup()
+
+    const res = await request('/api/posts/missing/favorite', { method: 'DELETE' })
+
+    expect(res.status).toBe(404)
+  })
+
+  it('POST 不被支持时返回 405', async () => {
+    const { request } = setup([makePost()])
+
+    const res = await request('/api/posts/p1/favorite', { method: 'POST' })
+
+    expect(res.status).toBe(405)
+    expect(res.headers.get('allow')).toBe('PUT, DELETE')
+  })
+
+  it('互动后的状态会出现在列表接口中', async () => {
+    const { request } = setup([makePost({ id: 'a', createdAt: 1 }), makePost({ id: 'b', createdAt: 2 })])
+    await request('/api/posts/a/like', { method: 'PUT' })
+    await request('/api/posts/b/favorite', { method: 'PUT' })
+
+    const body = (await (await request('/api/posts')).json()) as { posts: Post[] }
+    const byId = new Map(body.posts.map((post) => [post.id, post]))
+
+    expect(byId.get('a')).toMatchObject({ liked: true, likes: 1, favorited: false })
+    expect(byId.get('b')).toMatchObject({ favorited: true, liked: false, likes: 0 })
+  })
+})
+
 describe('兜底行为', () => {
   it('未知 /api 路径返回 404 JSON', async () => {
     const { request } = setup()
