@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { EMPTY_FAVORITE_TEXT, EMPTY_FEED_TEXT } from '@/constants/feed'
 import type { Post } from '@/types/post'
 import { seedPosts, storedPosts, testFetch } from '@/test/fakeServer'
 import { useFeedStore } from '../feed'
@@ -299,5 +300,206 @@ describe('useFeedStore - 定位状态', () => {
     store.setLocationStatus('unavailable')
     expect(store.location).toBeNull()
     expect(store.locationStatus).toBe('unavailable')
+  })
+})
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+/**
+ * 互动请求替身：GET 仍走真实 Hono 应用，
+ * PUT / DELETE 由用例决定返回，前端分支互不依赖后端实现细节。
+ */
+function stubReaction(respond: (init?: RequestInit) => Response): Mock<typeof fetch> {
+  const stub = vi.fn<typeof fetch>(async (input, init) => {
+    if (!init?.method || init.method === 'GET') return testFetch(input, init)
+    return respond(init)
+  })
+  vi.stubGlobal('fetch', stub)
+
+  return stub
+}
+
+describe('useFeedStore - 点赞与收藏', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('点赞先乐观更新，成功后用服务端计数对齐', async () => {
+    let release: ((response: Response) => void) | undefined
+    const stub = vi.fn<typeof fetch>((input, init) => {
+      if (!init?.method || init.method === 'GET') return testFetch(input, init)
+      return new Promise<Response>((resolve) => {
+        release = resolve
+      })
+    })
+    vi.stubGlobal('fetch', stub)
+
+    const store = useFeedStore()
+    store.posts = [makePost({ likes: 2 })]
+
+    const pending = store.toggleReaction('p1', 'like')
+
+    // 请求还没回来，界面已经先变
+    expect(store.posts[0]).toMatchObject({ liked: true, likes: 3 })
+    expect(store.isReactionPending('p1', 'like')).toBe(true)
+
+    // 在途期间再点一次：不发第二个请求，也不把计数点到 4
+    const again = await store.toggleReaction('p1', 'like')
+    expect(again.ok).toBe(true)
+    expect(stub.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1)
+    expect(store.posts[0].likes).toBe(3)
+
+    release?.(jsonResponse({ post: makePost({ liked: true, likes: 9 }) }))
+    await pending
+
+    expect(store.posts[0]).toMatchObject({ liked: true, likes: 9 })
+    expect(store.isReactionPending('p1', 'like')).toBe(false)
+  })
+
+  it('取消点赞用 DELETE 并把计数减一', async () => {
+    const stub = stubReaction(() => jsonResponse({ post: makePost({ liked: false, likes: 0 }) }))
+    const store = useFeedStore()
+    store.posts = [makePost({ liked: true, likes: 1 })]
+
+    await store.toggleReaction('p1', 'like')
+
+    expect(stub.mock.calls[0][0]).toBe('/api/posts/p1/like')
+    expect(stub.mock.calls[0][1]?.method).toBe('DELETE')
+    expect(store.posts[0]).toMatchObject({ liked: false, likes: 0 })
+  })
+
+  it('请求失败时回滚并标记服务降级', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')))
+    const store = useFeedStore()
+    store.posts = [makePost({ likes: 2 })]
+
+    const result = await store.toggleReaction('p1', 'like')
+
+    expect(result).toEqual({ ok: false, reason: 'unavailable' })
+    expect(store.posts[0]).toMatchObject({ liked: false, likes: 2 })
+    expect(store.reactionFailed).toBe(true)
+    expect(store.apiOk).toBe(false)
+    expect(store.isReactionPending('p1', 'like')).toBe(false)
+  })
+
+  it('目标动态已不存在时返回 not-found，不影响服务可用标记', async () => {
+    stubReaction(() => jsonResponse({ error: { code: 'NOT_FOUND', message: 'gone' } }, 404))
+    const store = useFeedStore()
+    store.posts = [makePost()]
+
+    const result = await store.toggleReaction('p1', 'like')
+
+    expect(result).toEqual({ ok: false, reason: 'not-found' })
+    expect(store.posts[0].liked).toBe(false)
+    expect(store.apiOk).toBe(true)
+  })
+
+  it('本地没有该动态时直接返回 not-found，不发请求', async () => {
+    const stub = stubReaction(() => jsonResponse({ post: makePost() }))
+    const store = useFeedStore()
+
+    await expect(store.toggleReaction('missing', 'like')).resolves.toEqual({
+      ok: false,
+      reason: 'not-found',
+    })
+    expect(stub).not.toHaveBeenCalled()
+  })
+
+  it('收藏只切换 favorited，不影响点赞状态', async () => {
+    stubReaction(() => jsonResponse({ post: makePost({ favorited: true, liked: true, likes: 3 }) }))
+    const store = useFeedStore()
+    store.posts = [makePost({ liked: true, likes: 3 })]
+
+    await store.toggleReaction('p1', 'favorite')
+
+    expect(store.posts[0]).toMatchObject({ favorited: true, liked: true, likes: 3 })
+  })
+
+  it('成功时只回填本次改动的字段，不覆盖另一类互动', async () => {
+    // 服务端返回的整条数据里 favorited 为 true，但这个用例只点赞
+    stubReaction(() => jsonResponse({ post: makePost({ favorited: true, liked: true, likes: 1 }) }))
+    const store = useFeedStore()
+    store.posts = [makePost({ favorited: false })]
+
+    await store.toggleReaction('p1', 'like')
+
+    expect(store.posts[0]).toMatchObject({ liked: true, likes: 1, favorited: false })
+  })
+
+  it('首屏刷新不会用服务端旧快照覆盖在途的点赞状态', async () => {
+    seedPosts([makePost({ likes: 2 })])
+
+    let release: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') return testFetch(input, init)
+      return new Promise<Response>((resolve) => {
+        release = resolve
+      })
+    })
+
+    const store = useFeedStore()
+    await store.init()
+
+    const pending = store.toggleReaction('p1', 'like')
+    await store.init()
+
+    expect(store.posts[0]).toMatchObject({ liked: true, likes: 3 })
+
+    release?.(jsonResponse({ post: makePost({ liked: true, likes: 3 }) }))
+    await pending
+  })
+})
+
+describe('useFeedStore - 收藏筛选', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('默认展示全部动态', () => {
+    const store = useFeedStore()
+    store.posts = [makePost({ id: 'a' }), makePost({ id: 'b', favorited: true })]
+
+    expect(store.filter).toBe('all')
+    expect(store.visiblePosts).toHaveLength(2)
+    expect(store.emptyText).toBe(EMPTY_FEED_TEXT)
+  })
+
+  it('只看收藏时仅保留已收藏的动态', () => {
+    const store = useFeedStore()
+    store.posts = [
+      makePost({ id: 'a', createdAt: 2 }),
+      makePost({ id: 'b', createdAt: 1, favorited: true }),
+    ]
+
+    store.setFilter('favorites')
+
+    expect(store.visiblePosts.map((post) => post.id)).toEqual(['b'])
+    expect(store.isEmpty).toBe(false)
+  })
+
+  it('收藏为空时展示收藏专属空态', () => {
+    const store = useFeedStore()
+    store.posts = [makePost()]
+
+    store.setFilter('favorites')
+
+    expect(store.isEmpty).toBe(true)
+    expect(store.emptyText).toBe(EMPTY_FAVORITE_TEXT)
+  })
+
+  it('收藏后不必切换筛选也能看到收藏结果', async () => {
+    stubReaction(() => jsonResponse({ post: makePost({ favorited: true }) }))
+    const store = useFeedStore()
+    store.posts = [makePost()]
+
+    await store.toggleReaction('p1', 'favorite')
+    store.setFilter('favorites')
+
+    expect(store.visiblePosts).toHaveLength(1)
   })
 })

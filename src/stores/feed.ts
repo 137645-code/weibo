@@ -1,7 +1,18 @@
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
-import type { AddPostResult, LocationStatus, Post, PostDraft } from '@/types/post'
+import { EMPTY_FAVORITE_TEXT, EMPTY_FEED_TEXT } from '@/constants/feed'
+import type {
+  AddPostResult,
+  LocationStatus,
+  Post,
+  PostDraft,
+  PostReaction,
+  SetReactionResult,
+} from '@/types/post'
 import { createPostApi } from '@/utils/api'
+
+/** 信息流筛选：全部 / 仅收藏 */
+export type FeedFilter = 'all' | 'favorites'
 
 /**
  * 信息流状态：只持有数据与业务状态，不感知任何 UI 文案。
@@ -19,6 +30,11 @@ export const useFeedStore = defineStore('feed', () => {
   const submitting = shallowRef(false)
   const location = shallowRef<string | null>(null)
   const locationStatus = shallowRef<LocationStatus>('idle')
+  const filter = shallowRef<FeedFilter>('all')
+  /** 在途互动请求：`${id}:${kind}`，既禁用按钮，也阻止同一按钮重复计数 */
+  const pendingReactions = ref<string[]>([])
+  /** 最近一次互动是否失败，供界面给出轻提示 */
+  const reactionFailed = shallowRef(false)
 
   /** 只接受最后一次发起的加载结果，避免旧快照覆盖新状态 */
   let loadSeq = 0
@@ -30,11 +46,37 @@ export const useFeedStore = defineStore('feed', () => {
     posts.value.slice().sort((a, b) => b.createdAt - a.createdAt),
   )
 
-  const isEmpty = computed(() => posts.value.length === 0)
+  /** 当前筛选下可见的动态 */
+  const visiblePosts = computed(() =>
+    filter.value === 'favorites'
+      ? sortedPosts.value.filter((post) => post.favorited)
+      : sortedPosts.value,
+  )
+
+  /** 当前筛选下是否没有内容（收藏筛选下的空态与全量空态文案不同） */
+  const isEmpty = computed(() => visiblePosts.value.length === 0)
+
+  const emptyText = computed(() =>
+    filter.value === 'favorites' ? EMPTY_FAVORITE_TEXT : EMPTY_FEED_TEXT,
+  )
+
+  function reactionKey(id: string, kind: PostReaction): string {
+    return `${id}:${kind}`
+  }
+
+  /** 只改指定字段：互动互不干扰，也避免整条覆盖丢字段 */
+  function patchPost(id: string, patch: Partial<Post>): void {
+    posts.value = posts.value.map((post) => (post.id === id ? { ...post, ...patch } : post))
+  }
+
+  function isReactionPending(id: string, kind: PostReaction): boolean {
+    return pendingReactions.value.includes(reactionKey(id, kind))
+  }
 
   /**
    * 首屏从服务端拉取数据。失败时标记服务不可用，界面据此展示提示条。
-   * 若加载期间已有新动态发布成功（服务端快照里还没有），按 id 合并保留。
+   * 若加载期间已有新动态发布成功（服务端快照里还没有），按 id 合并保留；
+   * 正在切换的互动状态也用本地意图覆盖快照，避免「点了又被刷回去」。
    */
   async function init(): Promise<void> {
     const seq = ++loadSeq
@@ -48,7 +90,22 @@ export const useFeedStore = defineStore('feed', () => {
 
     const known = new Set(list.map((post) => post.id))
     const localOnly = posts.value.filter((post) => !known.has(post.id))
-    posts.value = [...list, ...localOnly]
+    const merged = list.map((post) => {
+      const local = posts.value.find((item) => item.id === post.id)
+      if (!local) return post
+
+      const likePending = isReactionPending(post.id, 'like')
+      const favoritePending = isReactionPending(post.id, 'favorite')
+      if (!likePending && !favoritePending) return post
+
+      return {
+        ...post,
+        ...(likePending ? { liked: local.liked, likes: local.likes } : null),
+        ...(favoritePending ? { favorited: local.favorited } : null),
+      }
+    })
+
+    posts.value = [...merged, ...localOnly]
   }
 
   /**
@@ -76,6 +133,70 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  /**
+   * 切换点赞 / 收藏：先乐观更新，再以服务端结果对齐本次改动的字段。
+   * 失败只回滚这两个字段，不影响期间其它已成功的互动；
+   * 同一按钮在途时直接忽略再次点击，避免计数被点花。
+   */
+  async function toggleReaction(id: string, kind: PostReaction): Promise<SetReactionResult> {
+    const current = posts.value.find((post) => post.id === id)
+    if (!current) return { ok: false, reason: 'not-found' }
+
+    const key = reactionKey(id, kind)
+    if (pendingReactions.value.includes(key)) return { ok: true, post: current }
+
+    const active = kind === 'like' ? !current.liked : !current.favorited
+    const before: Partial<Post> =
+      kind === 'like'
+        ? { liked: current.liked, likes: current.likes }
+        : { favorited: current.favorited }
+
+    patchPost(
+      id,
+      kind === 'like'
+        ? { liked: active, likes: Math.max(0, current.likes + (active ? 1 : -1)) }
+        : { favorited: active },
+    )
+
+    pendingReactions.value = [...pendingReactions.value, key]
+    reactionFailed.value = false
+
+    try {
+      const result = await api.setReaction(id, kind, active)
+
+      if (result.ok) {
+        patchPost(
+          id,
+          kind === 'like'
+            ? { liked: result.post.liked, likes: result.post.likes }
+            : { favorited: result.post.favorited },
+        )
+        apiOk.value = true
+
+        return { ok: true, post: result.post }
+      }
+
+      patchPost(id, before)
+      reactionFailed.value = true
+      if (result.reason === 'unavailable') apiOk.value = false
+
+      return result
+    } catch {
+      // 传输层约定不抛错，这里只是兜底：任何异常都不该让界面停在乐观状态
+      patchPost(id, before)
+      reactionFailed.value = true
+      apiOk.value = false
+
+      return { ok: false, reason: 'unavailable' }
+    } finally {
+      pendingReactions.value = pendingReactions.value.filter((item) => item !== key)
+    }
+  }
+
+  function setFilter(next: FeedFilter): void {
+    filter.value = next
+  }
+
   function setLocation(city: string | null): void {
     location.value = city
   }
@@ -92,12 +213,20 @@ export const useFeedStore = defineStore('feed', () => {
     submitting,
     location,
     locationStatus,
+    filter,
+    pendingReactions,
+    reactionFailed,
     // 派生
     sortedPosts,
+    visiblePosts,
     isEmpty,
+    emptyText,
     // 动作
     init,
     addPost,
+    toggleReaction,
+    isReactionPending,
+    setFilter,
     setLocation,
     setLocationStatus,
   }
